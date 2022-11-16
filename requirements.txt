@@ -1,0 +1,5 @@
+pyTelegramBotAPI
+aiohttp
+alembic
+psycopg2-binary
+sqlalchemy[asyncio]
