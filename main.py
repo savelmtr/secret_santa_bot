@@ -4,8 +4,10 @@ import os
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from models import Rooms, Users
-from sqlalchemy import update, insert, func, cast, case
+from sqlalchemy import update, insert, delete
 from sqlalchemy.future import select
+from copy import copy
+from random import randint
 
 
 NUM_PTTRN = re.compile(r'\d+')
@@ -16,7 +18,6 @@ engine = create_async_engine(
 )
 AsyncSession = async_sessionmaker(engine, expire_on_commit=False)
 bot = AsyncTeleBot(TOKEN)
-
 
 
 @bot.message_handler(commands=['help'])
@@ -129,7 +130,7 @@ async def set_wish(message):
 
 @bot.message_handler(commands=['members'])
 async def show_members(message):
-    user = await get_user(user_payload)
+    user = await get_user(message.from_user)
     if not user.room_id:
         await bot.reply_to(message, f'Вы не подсоединены ни к одной комнате.')
     else:
@@ -144,7 +145,69 @@ async def show_members(message):
         async with AsyncSession.begin() as session:
             q = await session.execute(room_req)
             members = q.scalars().all()
-        m_str = '\n* '.join([f'@{m.userid} {m.first_name} {m.last_name}' for m in members])
-        await bot.reply_to(message, m_str)
+        if not members:
+            await bot.reply_to(message, '''
+    Вы не являетесь создателем группы.
+    Только создатель может просматривать состав группы.
+            ''')
+        else:
+            m_str = '\n* '.join([f'@{m.userid} {m.first_name} {m.last_name}' for m in members])
+            await bot.reply_to(message, m_str)
+
+
+async def combine_pairs(members: list[int]):
+    used_ids = set()
+    pairs = []
+    for m in members:
+        taker = m
+        while taker == m or taker in used_ids:
+            taker = random.choice(members)
+        pairs.append((m, taker))
+        used_ids.add(taker)
+    return pairs
+
+
+@bot.message_handler(commands=['set_pairs'])
+async def set_pairs(message):
+    user = await get_user(message.from_user)
+    if not user.room_id:
+        await bot.reply_to(message, f'Вы не подсоединены ни к одной комнате.')
+    else:
+        room_req = (
+            select(Users.id)
+            .join(Rooms, Rooms.id == Users.room_id)
+            .filter(
+                Rooms.id == user.room_id,
+                Rooms.creator_id == user.id
+            )
+        )
+        async with AsyncSession.begin() as session:
+            q = await session.execute(room_req)
+            members = q.scalars().all()
+        if not members:
+            await bot.reply_to(message, '''
+    Вы не являетесь создателем группы.
+    Только создатель может запускать создание пар.
+            ''')
+        else:
+            pairs = await combine_pairs([m.id for m in members])
+            async with AsyncSession.begin() as session:
+                del_req = (
+                    delete(Pairs)
+                    .where(Pairs.giver_id.in_([p[0] for p in pairs]))
+                )
+                await session.execute(del_req)
+                await session.commit()
+                for (giver, taker) in pairs:
+                    session.add(
+                        Pairs(
+                            giver_id=giver,
+                            taker_id=taker
+                        )
+                    )
+            await bot.reply_to(message, '''
+    Пары созданы.
+            ''')
+
 
 asyncio.run(bot.polling())
