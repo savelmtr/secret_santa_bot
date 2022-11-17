@@ -8,13 +8,14 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import aliased
 from telebot.async_telebot import AsyncTeleBot
 
-from models import Rooms, Users
+from models import Rooms, Users, Pairs
+import random
 
 
 NUM_PTTRN = re.compile(r'\d+')
 TOKEN = os.getenv('TOKEN')
 engine = create_async_engine(
-    os.getenv('PG_URI'),
+    os.getenv('PG_URI_ASYNC'),
     echo=False,
 )
 AsyncSession = async_sessionmaker(engine, expire_on_commit=False)
@@ -55,13 +56,13 @@ async def get_user(user_payload) -> Users:
     req = select(Users).filter(Users.id == user_payload.id)
     async with AsyncSession.begin() as session:
         q = await session.execute(req)
-        user = q.one()
+        user = q.scalar()
         if not user:
             user = Users(
                 id=user_payload.id,
                 username=user_payload.username,
-                first_name=user_payload.first_name,
-                last_name=user_payload.last_name
+                first_name=user_payload.first_name if user_payload.first_name else '',
+                last_name=user_payload.last_name if user_payload.last_name else ''
             )
             session.add(user)
     return user
@@ -75,7 +76,17 @@ async def create_room(name: str, user_payload) -> int:
     ).returning(Rooms.id)
     async with AsyncSession.begin() as session:
         q = await session.execute(req)
-        return q.one().id
+        room_id = q.one().id
+
+        up_req = (
+            update(Users)
+            .where(Users.id == user.id)
+            .values(
+                room_id=room_id
+            )
+        )
+        await session.execute(up_req)
+        return room_id
 
 
 async def to_room_attach(room_id: int, user_payload) -> str|None:
@@ -91,11 +102,11 @@ async def to_room_attach(room_id: int, user_payload) -> str|None:
     )
     async with AsyncSession.begin() as session:
         q = await session.execute(room_id_req)
-        room = q.one()
+        room = q.scalar()
         if not room:
             return
         await session.execute(attaching_req)
-        return room.name
+        return room
 
 
 @bot.message_handler(commands=['start'])
@@ -142,19 +153,12 @@ async def show_members(message):
             .join(Rooms, Rooms.id == Users.room_id)
             .filter(
                 Rooms.id == user.room_id
-                # Rooms.creator_id == user.id
             )
         )
         async with AsyncSession.begin() as session:
             q = await session.execute(room_req)
             members = q.scalars().all()
-    #     if not members:
-    #         await bot.reply_to(message, '''
-    # Вы не являетесь создателем группы.
-    # Только создатель может просматривать состав группы.
-    #         ''')
-    #     else:
-        m_str = '\n* '.join([f'@{m.userid} {m.first_name} {m.last_name}' for m in members])
+        m_str = '\n* '.join([f'@{m.username} {m.first_name} {m.last_name}' for m in members])
         await bot.reply_to(message, m_str)
 
 
@@ -192,6 +196,8 @@ async def set_pairs(message):
     Вы не являетесь создателем группы.
     Только создатель может запускать создание пар.
             ''')
+        elif len(members) % 2:
+            await bot.reply_to(message, 'В комнате нечётное число участников.')
         else:
             pairs = await combine_pairs([m.id for m in members])
             async with AsyncSession.begin() as session:
@@ -221,6 +227,7 @@ async def get_info(message):
     req = (
         select(
             Rooms.name.label('room'),
+            Rooms.id.label('room_id'),
             giver.wish_string.label('my_wishes'),
             taker.first_name,
             taker.last_name,
@@ -231,18 +238,25 @@ async def get_info(message):
         .join(taker, taker.id == Pairs.taker_id, isouter=True)
         .join(Rooms, Rooms.id == giver.room_id, isouter=True)
         .filter(
-            giver.id = user.id
+            giver.id == user.id
         )
     )
     async with AsyncSession.begin() as session:
         q = await session.execute(req)
-        data = q.one()
-    await bot.reply_to(
-        message,
-        f'Вы подсоединены к комнате {data.room}.\n'
-        f'Ваши пожелания: {data.my_wishes}.\n'
-        f'Вы дарите подарок: @{data.username} {data.first_name} {data.last_name}.\n'
-        f'Пожелания одариваемого: {data.wish_string}.'
-    )
+        data = q.one_or_none()
+        msg = ''
+        for line, args in (
+            ('Вы подсоединены к комнате {}.', (data.room,)),
+            (f'https://t.me/{(await bot.get_me()).username}/?start={{}}', (data.room_id,)),
+            ('Ваши пожелания: {}.', (data.my_wishes,)),
+            ('Вы дарите подарок: @{} {} {}.', (data.username, data.first_name, data.last_name)),
+            ('Пожелания одариваемого: {}.', (data.wish_string, ))
+        ):
+            if any(args):
+                msg += line.format(*map(lambda x: '' if x is None else x, args)) + '\n'
+        if msg:
+            await bot.reply_to(message, msg)
+        else:
+            await bot.reply_to(message, "Бот пока с вами не знаком.")
 
 asyncio.run(bot.polling())

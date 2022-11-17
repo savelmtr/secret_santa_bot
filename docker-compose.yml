@@ -1,4 +1,4 @@
-version: '3.7'
+version: '3.9'
 services:
   app:
     build: .
@@ -7,6 +7,19 @@ services:
       - .:/code
     env_file:
       - .env
+    depends_on:
+      init:
+        condition: service_completed_successfully
+  init:
+    build: .
+    command: alembic upgrade head
+    volumes:
+      - .:/code
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
   db:
     image: postgres:12.0-alpine
     ports:
@@ -15,5 +28,10 @@ services:
       - postgres_data:/var/lib/postgresql/data/
     env_file:
       - .env
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "test"]
+      interval: 5s
+      retries: 5
+    restart: always
 volumes:
   postgres_data:

@@ -2,4 +2,5 @@ pyTelegramBotAPI
 aiohttp
 alembic
 psycopg2-binary
-sqlalchemy[asyncio]
+asyncpg
+sqlalchemy==2.0.0b3
