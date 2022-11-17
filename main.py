@@ -67,32 +67,44 @@ async def get_user(user_payload) -> Users:
 
 
 async def create_room(name: str, user_payload) -> int:
-    user = get_user(message.from_user)
-        req = insert(Rooms).values(
-            name=payload,
-            creator_id=user.id
-        ).returning(Rooms.id)
-        async with AsyncSession.begin() as session:
-            q = await session.execute(req)
-            return q.one().id
+    user = await get_user(user_payload)
+    req = insert(Rooms).values(
+        name=payload,
+        creator_id=user.id
+    ).returning(Rooms.id)
+    async with AsyncSession.begin() as session:
+        q = await session.execute(req)
+        return q.one().id
 
 
-async def to_room_attach(room_id: int) -> str|None:
-    room_id_req = select(Rooms.id).filter(Rooms.id == room_id)
+async def to_room_attach(room_id: int, user_payload) -> str|None:
+    user = await get_user(user_payload)
+    user_id = user.id
+    room_id_req = select(Rooms.name).filter(Rooms.id == room_id)
+    attaching_req = (
+        update(Users)
+        .where(Users.id == user_id)
+        .values(
+            room_id=room_id
+        )
+    )
     async with AsyncSession.begin() as session:
         q = await session.execute(room_id_req)
-        room_id = q.one().id
-        # TODO: Закончить функцию
+        room = q.one()
+        if not room:
+            return
+        await session.execute(attaching_req)
+        return room.name
 
 
 @bot.message_handler(commands=['start'])
 async def get_room(message):
-    #    print(message.from_user.id, message.from_user.username)
     payload = message.text[6:].strip()
     if not payload:
-        await bot.reply_to(message, 'Вы не ввели ни номера комнаты, ни названия новой комнаты. Для справки /help.')
+        await send_welcome(message)
     elif NUM_PTTRN.match(payload):
-        await bot.reply_to(message, f'Вы присоединились к комнате {payload}')
+        room_name = await to_room_attach(int(payload), message.from_user)
+        await bot.reply_to(message, f'Вы присоединились к комнате {room_name} c id:{payload}')
     else:
         room_id = await create_room(payload, message.from_user)
         await bot.reply_to(message, f'Вы создали комнату {payload} c id {room_id}')
