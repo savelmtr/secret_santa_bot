@@ -127,4 +127,24 @@ async def set_wish(message):
         await bot.reply_to(message, f'В желаемое добавлено: {payload}')
 
 
+@bot.message_handler(commands=['members'])
+async def show_members(message):
+    user = await get_user(user_payload)
+    if not user.room_id:
+        await bot.reply_to(message, f'Вы не подсоединены ни к одной комнате.')
+    else:
+        room_req = (
+            select(Users)
+            .join(Rooms, Rooms.id == Users.room_id)
+            .filter(
+                Rooms.id == user.room_id,
+                Rooms.creator_id == user.id
+            )
+        )
+        async with AsyncSession.begin() as session:
+            q = await session.execute(room_req)
+            members = q.scalars().all()
+        m_str = '\n* '.join([f'@{m.userid} {m.first_name} {m.last_name}' for m in members])
+        await bot.reply_to(message, m_str)
+
 asyncio.run(bot.polling())
