@@ -4,7 +4,7 @@ import os
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from models import Rooms, Users
-from sqlalchemy import update, insert, delete
+from sqlalchemy import update, insert, delete, aliased
 from sqlalchemy.future import select
 from copy import copy
 from random import randint
@@ -209,5 +209,37 @@ async def set_pairs(message):
     Пары созданы.
             ''')
 
+
+@bot.message_handler(commands=['info'])
+async def get_info(message):
+    user = await get_user(message.from_user)
+    giver = aliased(Users)
+    taker = aliased(Users)
+    req = (
+        select(
+            Rooms.name.label('room'),
+            giver.wish_string.label('my_wishes'),
+            taker.first_name,
+            taker.last_name,
+            taker.username,
+            taker.wish_string
+        )
+        .join(Pairs, Pairs.giver_id == giver.id, isouter=True)
+        .join(taker, taker.id == Pairs.taker_id, isouter=True)
+        .join(Rooms, Rooms.id == giver.room_id, isouter=True)
+        .filter(
+            giver.id = user.id
+        )
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(req)
+        data = q.one()
+    await bot.reply_to(
+        message,
+        f'Вы подсоединены к комнате {data.room}.\n'
+        f'Ваши пожелания: {data.my_wishes}.\n'
+        f'Вы дарите подарок: @{data.username} {data.first_name} {data.last_name}.\n'
+        f'Пожелания одариваемого: {data.wish_string}.'
+    )
 
 asyncio.run(bot.polling())
