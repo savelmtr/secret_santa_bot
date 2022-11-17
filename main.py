@@ -1,13 +1,14 @@
-import re
-from telebot.async_telebot import AsyncTeleBot
-import os
 import asyncio
+import os
+import re
+
+from sqlalchemy import update, insert, delete
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from models import Rooms, Users
-from sqlalchemy import update, insert, delete, aliased
 from sqlalchemy.future import select
-from copy import copy
-from random import randint
+from sqlalchemy.orm import aliased
+from telebot.async_telebot import AsyncTeleBot
+
+from models import Rooms, Users
 
 
 NUM_PTTRN = re.compile(r'\d+')
@@ -63,14 +64,13 @@ async def get_user(user_payload) -> Users:
                 last_name=user_payload.last_name
             )
             session.add(user)
-            await session.commit()
     return user
 
 
 async def create_room(name: str, user_payload) -> int:
     user = await get_user(user_payload)
     req = insert(Rooms).values(
-        name=payload,
+        name=name,
         creator_id=user.id
     ).returning(Rooms.id)
     async with AsyncSession.begin() as session:
@@ -105,7 +105,10 @@ async def get_room(message):
         await send_welcome(message)
     elif NUM_PTTRN.match(payload):
         room_name = await to_room_attach(int(payload), message.from_user)
-        await bot.reply_to(message, f'Вы присоединились к комнате {room_name} c id:{payload}')
+        if not room_name:
+            await bot.reply_to(message, f'Не найдено комнаты c id:{payload}')
+        else:
+            await bot.reply_to(message, f'Вы присоединились к комнате {room_name} c id:{payload}')
     else:
         room_id = await create_room(payload, message.from_user)
         await bot.reply_to(message, f'Вы создали комнату {payload} c id {room_id}')
@@ -138,21 +141,21 @@ async def show_members(message):
             select(Users)
             .join(Rooms, Rooms.id == Users.room_id)
             .filter(
-                Rooms.id == user.room_id,
-                Rooms.creator_id == user.id
+                Rooms.id == user.room_id
+                # Rooms.creator_id == user.id
             )
         )
         async with AsyncSession.begin() as session:
             q = await session.execute(room_req)
             members = q.scalars().all()
-        if not members:
-            await bot.reply_to(message, '''
-    Вы не являетесь создателем группы.
-    Только создатель может просматривать состав группы.
-            ''')
-        else:
-            m_str = '\n* '.join([f'@{m.userid} {m.first_name} {m.last_name}' for m in members])
-            await bot.reply_to(message, m_str)
+    #     if not members:
+    #         await bot.reply_to(message, '''
+    # Вы не являетесь создателем группы.
+    # Только создатель может просматривать состав группы.
+    #         ''')
+    #     else:
+        m_str = '\n* '.join([f'@{m.userid} {m.first_name} {m.last_name}' for m in members])
+        await bot.reply_to(message, m_str)
 
 
 async def combine_pairs(members: list[int]):
