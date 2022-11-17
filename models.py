@@ -18,11 +18,6 @@ class Users(Base):
     first_name = Column(String, nullable=False)
     last_name = Column(String, nullable=False)
     room_id = Column(Integer, ForeignKey("rooms.id"))
-
-
-class Wishes(Base):
-    __tablename__ = 'wishes'
-    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     wish_string = Column(String)
 
 
