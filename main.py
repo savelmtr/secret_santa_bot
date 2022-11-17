@@ -110,4 +110,21 @@ async def get_room(message):
         await bot.reply_to(message, f'Вы создали комнату {payload} c id {room_id}')
 
 
+@bot.message_handler(commands=['wish'])
+async def set_wish(message):
+    payload = message.text[6:].strip()
+    if not payload:
+        await bot.reply_to(message, f'Введите список желаемого.')
+    else:
+        req = (
+            update(Users)
+            .values(
+                wish_string=payload
+            )
+        )
+        async with AsyncSession.begin() as session:
+            await session.execute(req)
+        await bot.reply_to(message, f'В желаемое добавлено: {payload}')
+
+
 asyncio.run(bot.polling())
