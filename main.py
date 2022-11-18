@@ -320,7 +320,7 @@ async def rename_room(message):
         update(Rooms)
         .where(
             Rooms.id == user.room_id,
-            Rooms.creator_id != user.id
+            Rooms.creator_id == user.id
         )
         .values(
             name=payload
