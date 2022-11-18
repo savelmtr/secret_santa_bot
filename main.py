@@ -281,18 +281,25 @@ async def get_my_rooms(message):
 @bot.message_handler(commands=['reset'])
 async def reset_members(message):
     user = await get_user(message.from_user)
+    cte = (
+        select(Rooms.id)
+        .filter(
+            Rooms.id == user.room_id,
+            Rooms.creator_id == user.id
+        )
+        .cte('cte')
+    )
     req = (
         update(Users)
         .join(Rooms, Rooms.id == Users.room_id)
         .where(
-            Rooms.id == user.room_id,
-            Rooms.creator_id == user.id,
+            Users.room_id == cte.c.id
             Users.id != user.id
         )
         .values(
             room_id=None
         )
-        .returning(Rooms.name)
+        .returning(cte.c.id)
     )
     async with AsyncSession.begin() as session:
         q = await session.execute(req)
