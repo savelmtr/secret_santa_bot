@@ -21,6 +21,7 @@ engine = create_async_engine(
 AsyncSession = async_sessionmaker(engine, expire_on_commit=False)
 bot = AsyncTeleBot(TOKEN)
 
+# TODO: reset, rename, lock
 
 @bot.message_handler(commands=['help'])
 async def send_welcome(message):
@@ -258,5 +259,23 @@ async def get_info(message):
             await bot.reply_to(message, msg)
         else:
             await bot.reply_to(message, "Бот пока с вами не знаком.")
+
+
+@bot.message_handler(commands=['myrooms'])
+async def get_info(message):
+    user = await get_user(message.from_user)
+    req = (
+        select(Rooms)
+        .filter(Rooms.creator_id == user.id)
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(req)
+        rooms = q.scalars().all()
+    if not rooms:
+        await bot.reply_to(message, 'Вы не являетесь владельцем ни одной комнаты.')
+    else:
+        msg = '\n'.join([f'{r.id} {r.name}' for r in rooms])
+        await bot.reply_to(message, msg)
+
 
 asyncio.run(bot.polling())
