@@ -290,7 +290,7 @@ async def reset_members(message):
             Users.id != user.id
         )
         .values(
-            Users.room_id=None
+            room_id=None
         )
         .returning(Rooms.name)
     )
