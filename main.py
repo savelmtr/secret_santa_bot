@@ -336,7 +336,7 @@ async def rename_room(message):
     if not res:
         await bot.reply_to(message, 'Вы не являетесь создателем комнаты, чтобы менять её название.')
     else:
-        await bot.reply_to(message, f'Название комнаты с id:{res.id} изменено на {res.name}'
+        await bot.reply_to(message, f'Название комнаты с id:{res.id} изменено на {res.name}')
 
 
 asyncio.run(bot.polling())
