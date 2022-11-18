@@ -292,13 +292,13 @@ async def reset_members(message):
     req = (
         update(Users)
         .where(
-            Users.room_id == cte.c.id,
+            Users.room_id == select(cte.c.id).scalar_subquery(),
             Users.id != user.id
         )
         .values(
             room_id=None
         )
-        .returning(cte.c.id)
+        .returning(select(cte.c.id).scalar_subquery())
     )
     async with AsyncSession.begin() as session:
         q = await session.execute(req)
