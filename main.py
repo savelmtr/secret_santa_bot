@@ -208,7 +208,7 @@ async def set_pairs(message):
                 .where(Pairs.giver_id.in_([p[0] for p in pairs]))
             )
             await session.execute(del_req)
-            await session.commit()
+        async with AsyncSession.begin() as session:
             for (giver, taker) in pairs:
                 session.add(
                     Pairs(
