@@ -1,13 +1,15 @@
 import asyncio
 import os
 import re
-
 from sqlalchemy import update, insert, delete
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.future import select
 from sqlalchemy.orm import aliased
 from telebot.async_telebot import AsyncTeleBot
-
+from telebot import types
+from telebot.asyncio_storage import StateMemoryStorage
+from telebot.asyncio_handler_backends import State, StatesGroup
+from telebot import asyncio_filters
 from models import Rooms, Users, Pairs
 import random
 
@@ -18,12 +20,21 @@ engine = create_async_engine(
     os.getenv('PG_URI_ASYNC'),
     echo=False,
 )
-AsyncSession = async_sessionmaker(engine, expire_on_commit=False)
-bot = AsyncTeleBot(TOKEN)
 
+
+class ButtonStorage(StatesGroup):
+    connect_room = State()
+    create_room = State()
+    user_name = State()
+    wish_list = State()
+
+
+AsyncSession = async_sessionmaker(engine, expire_on_commit=False)
+bot = AsyncTeleBot(TOKEN, state_storage=StateMemoryStorage())
+bot.add_custom_filter(asyncio_filters.StateFilter(bot))
 
 @bot.message_handler(commands=['help'])
-async def send_welcome(message):
+async def send_welcome(message, markup):
     await bot.reply_to(message, """\
     Это бот-помощник тайного Деда Мороза.
 
@@ -49,7 +60,7 @@ async def send_welcome(message):
     * /reset -- удалить всех участников из комнаты.
 
     * /rename -- переименовать комнату.
-    """)
+    """, reply_markup=markup)
 
 
 async def get_user(user_payload) -> Users:
@@ -89,7 +100,7 @@ async def create_room(name: str, user_payload) -> int:
         return room_id
 
 
-async def to_room_attach(room_id: int, user_payload) -> str|None:
+async def to_room_attach(room_id: int, user_payload) -> str | None:
     user = await get_user(user_payload)
     user_id = user.id
     room_id_req = select(Rooms.name).filter(Rooms.id == room_id)
@@ -109,20 +120,101 @@ async def to_room_attach(room_id: int, user_payload) -> str|None:
         return room
 
 
+async def set_user_name_data(name, surname, user_payload) -> str | None:
+    user = await get_user(user_payload)
+    user_id = user.id
+    if user.last_name and user.first_name:
+        return ' '.join([user.last_name, user.first_name])
+    naming_req = (
+        update(Users)
+        .where(Users.id == user_id)
+        .values(
+            first_name=name,
+            last_name=surname,
+        )
+    )
+    async with AsyncSession.begin() as session:
+        result = await session.execute(naming_req)
+        return result
+
+
+@bot.callback_query_handler(func=lambda call: 'room' in call.data)
+async def callback_query(call):
+    req = call.data
+    if 'create_room' == req:
+        await bot.send_message(chat_id=call.message.chat.id, text='Введите название комнаты')
+        await bot.set_state(call.from_user.id, ButtonStorage.create_room, call.message.chat.id)
+    elif 'connect_room' == req:
+        await bot.send_message(chat_id=call.message.chat.id, text='Введите номер комнаты')
+        await bot.set_state(call.from_user.id, ButtonStorage.connect_room, call.message.chat.id)
+
+@bot.message_handler(state=ButtonStorage.create_room)
+async def create_room_(message):
+    room_name = message.text
+    room_id = await create_room(room_name, message.from_user)
+    await bot.reply_to(message, f'Вы создали комнату {room_name} c id {room_id}')
+
+
+@bot.message_handler(state=ButtonStorage.connect_room)
+async def connect_room_(message):
+    room_id = message.text
+    room_name = await to_room_attach(int(room_id), message.from_user)
+    if not room_name:
+        await bot.reply_to(message, f'Не найдено комнаты c id:{room_id}! Попробуйте еще раз!')
+        await bot.set_state(message.from_user.id, ButtonStorage.connect_room, message.chat.id)
+    else:
+        await bot.reply_to(message, f'Вы присоединились к комнате {room_name} c id:{room_id}!')
+        await bot.send_message(message.chat.id, f'Введите пожалуйста свое имя и фамилию')
+        await bot.set_state(message.from_user.id, ButtonStorage.user_name, message.chat.id)
+
+
+@bot.message_handler(state=ButtonStorage.user_name)
+async def get_user_name(message):
+    name, surname = str(message.text).split(' ')
+    result = await set_user_name_data(name, surname, message.from_user)
+    await bot.send_message(message.chat.id, f'А теперь введите список желаемых подарков')
+    await bot.set_state(message.from_user.id, ButtonStorage.wish_list, message.chat.id)
+
+
+@bot.message_handler(state=ButtonStorage.wish_list)
+async def get_user_name(message):
+    payload = message.text
+    if not payload:
+        await bot.reply_to(message, f'Введите список желаемого.')
+        await bot.set_state(message.from_user.id, ButtonStorage.wish_list, message.chat.id)
+    else:
+        req = (
+            update(Users)
+            .where(Users.id == message.from_user.id)
+            .values(
+                wish_string=payload
+            )
+        )
+        async with AsyncSession.begin() as session:
+            await session.execute(req)
+        await bot.reply_to(message, f'В желаемое добавлено: {payload}')
+        await bot.delete_state(message.from_user.id, message.chat.id)
+
 @bot.message_handler(commands=['start'])
 async def get_room(message):
-    payload = message.text[6:].strip()
-    if not payload:
-        await send_welcome(message)
-    elif NUM_PTTRN.match(payload):
-        room_name = await to_room_attach(int(payload), message.from_user)
-        if not room_name:
-            await bot.reply_to(message, f'Не найдено комнаты c id:{payload}')
-        else:
-            await bot.reply_to(message, f'Вы присоединились к комнате {room_name} c id:{payload}')
-    else:
-        room_id = await create_room(payload, message.from_user)
-        await bot.reply_to(message, f'Вы создали комнату {payload} c id {room_id}')
+    # if not payload:
+    create_room_btn = types.InlineKeyboardButton(text='Создать комнату', callback_data='create_room')
+    connect_room_btn = types.InlineKeyboardButton(text='Подключиться к комнате', callback_data='connect_room')
+    markup = types.InlineKeyboardMarkup()
+    markup.add(create_room_btn)
+    markup.add(connect_room_btn)
+    await send_welcome(message, markup)
+
+
+# elif 'Присоединиться' in message.text:
+#     room_name = await to_room_attach(int(payload), message.from_user)
+#     if not room_name:
+#         await bot.reply_to(message, f'Не найдено комнаты c id:{payload}')
+#     else:
+#         await bot.reply_to(message, f'Вы присоединились к комнате {room_name} c id:{payload}')
+# else:
+#     room_id = await create_room(payload, message.from_user)
+#     await bot.reply_to(message, f'Вы создали комнату {payload} c id {room_id}')
 
 
 @bot.message_handler(commands=['wish'])
@@ -246,11 +338,11 @@ async def get_info(message):
         data = q.one_or_none()
         msg = ''
         for line, args in (
-            ('Вы подсоединены к комнате {}.', (data.room,)),
-            (f'https://t.me/{(await bot.get_me()).username}/?start={{}}', (data.room_id,)),
-            ('Ваши пожелания: {}.', (data.my_wishes,)),
-            ('Вы дарите подарок: @{} {} {}.', (data.username, data.first_name, data.last_name)),
-            ('Пожелания одариваемого: {}.', (data.wish_string, ))
+                ('Вы подсоединены к комнате {}.', (data.room,)),
+                (f'https://t.me/{(await bot.get_me()).username}/?start={{}}', (data.room_id,)),
+                ('Ваши пожелания: {}.', (data.my_wishes,)),
+                ('Вы дарите подарок: @{} {} {}.', (data.username, data.first_name, data.last_name)),
+                ('Пожелания одариваемого: {}.', (data.wish_string,))
         ):
             if any(args):
                 msg += line.format(*map(lambda x: '' if x is None else x, args)) + '\n'
@@ -258,5 +350,6 @@ async def get_info(message):
             await bot.reply_to(message, msg)
         else:
             await bot.reply_to(message, "Бот пока с вами не знаком.")
+
 
 asyncio.run(bot.polling())
