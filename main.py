@@ -293,7 +293,7 @@ async def reset_members(message):
         update(Users)
         .join(Rooms, Rooms.id == Users.room_id)
         .where(
-            Users.room_id == cte.c.id
+            Users.room_id == cte.c.id,
             Users.id != user.id
         )
         .values(
