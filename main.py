@@ -2,7 +2,8 @@ import asyncio
 import os
 import re
 
-from sqlalchemy import update, insert, delete
+from sqlalchemy import update, and_
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.future import select
 from sqlalchemy.orm import aliased
@@ -13,13 +14,15 @@ from telebot.asyncio_handler_backends import State, StatesGroup
 from telebot import asyncio_filters
 from models import Rooms, Users, Pairs
 import random
+from cryptography.fernet import Fernet
 
 
 NUM_PTTRN = re.compile(r'\d+')
 TOKEN = os.getenv('TOKEN')
+Encoder = Fernet(os.getenv('SECRET').encode())
 engine = create_async_engine(
     os.getenv('PG_URI_ASYNC'),
-    echo=False,
+    echo=False
 )
 
 
@@ -33,7 +36,6 @@ class ButtonStorage(StatesGroup):
 AsyncSession = async_sessionmaker(engine, expire_on_commit=False)
 bot = AsyncTeleBot(TOKEN)
 
-# TODO: lock
 
 @bot.message_handler(commands=['help'])
 async def send_welcome(message, markup):
@@ -46,7 +48,8 @@ async def send_welcome(message, markup):
     /info -- узнать статус (название комнаты, 
     свои пожелания по подаркам, кому дарим, пожелания одариваемого)
     /myrooms -- информация о комнатах, созданных нами
-    /members -- посмотреть список участников комнаты. 
+    /members -- посмотреть список участников комнаты.
+    /enlock пароль -- отпереть запертую комнату.
 
 
     ** Следующие операции может осуществлять только создатель комнаты **
@@ -65,18 +68,26 @@ async def send_welcome(message, markup):
 
 
 async def get_user(user_payload) -> Users:
-    req = select(Users).filter(Users.id == user_payload.id)
-    async with AsyncSession.begin() as session:
-        q = await session.execute(req)
-        user = q.scalar()
-        if not user:
-            user = Users(
-                id=user_payload.id,
-                username=user_payload.username,
+    req = (
+        insert(Users)
+        .values(
+            id=user_payload.id,
+            username=user_payload.username,
+            first_name=user_payload.first_name if user_payload.first_name else '',
+            last_name=user_payload.last_name if user_payload.last_name else ''
+        )
+        .on_conflict_do_update(
+            index_elements=[Users.id],
+            set_=dict(
                 first_name=user_payload.first_name if user_payload.first_name else '',
                 last_name=user_payload.last_name if user_payload.last_name else ''
             )
-            session.add(user)
+        )
+        .returning(Users)
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(req)
+        user = q.scalar()
     return user
 
 
@@ -101,24 +112,27 @@ async def create_room(name: str, user_payload) -> int:
         return room_id
 
 
-async def to_room_attach(room_id: int, user_payload) -> str | None:
+async def to_room_attach(room_id: int, user_payload) -> tuple[str | None, bool]:
     user = await get_user(user_payload)
-    user_id = user.id
-    room_id_req = select(Rooms.name).filter(Rooms.id == room_id)
-    attaching_req = (
-        update(Users)
-        .where(Users.id == user_id)
-        .values(
-            room_id=room_id
-        )
-    )
+    room_id_req = select(Rooms).filter(Rooms.id == room_id)
+    attaching = update(Users).where(Users.id == user.id)
+    attaching_no_pass = attaching.values(room_id=room_id, candidate_room_id=None)
+    attaching_secure = attaching.values(candidate_room_id=room_id, room_id=None)
     async with AsyncSession.begin() as session:
         q = await session.execute(room_id_req)
         room = q.scalar()
         if not room:
-            return
-        await session.execute(attaching_req)
-        return room
+            return None, False
+        if room.creator_id == user.id:
+            # Создателю комнаты вводить пароль незачем.
+            await session.execute(attaching_no_pass)
+            return room.name, False
+        elif room.passkey:
+            await session.execute(attaching_secure)
+            return room.name, True
+        else:
+            await session.execute(attaching_no_pass)
+            return room.name, False
 
 
 async def set_user_name_data(name, surname, user_payload) -> str | None:
@@ -159,14 +173,24 @@ async def create_room_(message):
 @bot.message_handler(state=ButtonStorage.connect_room)
 async def connect_room_(message):
     room_id = message.text
-    room_name = await to_room_attach(int(room_id), message.from_user)
+    room_name, is_protected = await to_room_attach(int(room_id), message.from_user)
     if not room_name:
-        await bot.reply_to(message, f'Не найдено комнаты c id:{room_id}! Попробуйте еще раз!')
-        await bot.set_state(message.from_user.id, ButtonStorage.connect_room, message.chat.id)
-    else:
-        await bot.reply_to(message, f'Вы присоединились к комнате {room_name} c id:{room_id}!')
-        await bot.send_message(message.chat.id, f'Введите пожалуйста свое имя и фамилию')
-        await bot.set_state(message.from_user.id, ButtonStorage.user_name, message.chat.id)
+        await bot.reply_to(message, f'Не найдено комнаты c id:{room_id}')
+    elif room_name and not is_protected:
+        await bot.reply_to(message, f'Вы присоединились к комнате {room_name} c id:{room_id}')
+    elif room_name and is_protected:
+        await bot.reply_to(
+            message, 
+            f'Вы присоединились к комнате {room_name} c id:{room_id}.'
+            ' Комната заперта, введите пароль с помощью /enlock пароль.'
+        )
+    # if not room_name:
+    #     await bot.reply_to(message, f'Не найдено комнаты c id:{room_id}! Попробуйте еще раз!')
+    #     await bot.set_state(message.from_user.id, ButtonStorage.connect_room, message.chat.id)
+    # else:
+    #     await bot.reply_to(message, f'Вы присоединились к комнате {room_name} c id:{room_id}!')
+    #     await bot.send_message(message.chat.id, f'Введите пожалуйста свое имя и фамилию')
+    #     await bot.set_state(message.from_user.id, ButtonStorage.user_name, message.chat.id)
 
 
 @bot.message_handler(state=ButtonStorage.user_name)
@@ -195,6 +219,7 @@ async def get_user_name(message):
             await session.execute(req)
         await bot.reply_to(message, f'В желаемое добавлено: {payload}')
         await bot.delete_state(message.from_user.id, message.chat.id)
+
 
 @bot.message_handler(commands=['start'])
 async def get_room(message):
@@ -255,11 +280,11 @@ async def show_members(message):
         async with AsyncSession.begin() as session:
             q = await session.execute(room_req)
             members = q.scalars().all()
-        m_str = '\n* '.join([f'@{m.username} {m.first_name} {m.last_name}' for m in members])
+        m_str = '* ' + '\n* '.join([f'@{m.username} {m.first_name} {m.last_name}' for m in members])
         await bot.reply_to(message, m_str)
 
 
-async def combine_pairs(members: list[int]):
+def combine_pairs(members: list[int]):
     used_ids = set()
     pairs = []
     for m in members:
@@ -294,21 +319,26 @@ async def set_pairs(message):
     Только создатель может запускать создание пар.
             ''')
 
-        pairs = await combine_pairs(members)
+        pairs = combine_pairs(members)
+        stmt = (
+            insert(Pairs)
+            .values([
+                {
+                    'giver_id': giver,
+                    'taker_id': taker,
+                    'room_id': user.room_id
+                }
+                for (giver, taker) in pairs
+            ])
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[Pairs.giver_id, Pairs.room_id],
+            set_={
+                "taker_id": stmt.excluded.taker_id
+            }
+        )
         async with AsyncSession.begin() as session:
-            del_req = (
-                delete(Pairs)
-                .where(Pairs.giver_id.in_([p[0] for p in pairs]))
-            )
-            await session.execute(del_req)
-        async with AsyncSession.begin() as session:
-            for (giver, taker) in pairs:
-                session.add(
-                    Pairs(
-                        giver_id=giver,
-                        taker_id=taker
-                    )
-                )
+            await session.execute(stmt)
         await bot.reply_to(message, '''
     Пары созданы.
         ''')
@@ -319,18 +349,23 @@ async def get_info(message):
     user = await get_user(message.from_user)
     giver = aliased(Users)
     taker = aliased(Users)
+    candidate = aliased(Rooms)
+    rooms = aliased(Rooms)
     req = (
         select(
-            Rooms.name.label('room'),
-            Rooms.id.label('room_id'),
+            rooms.name.label('room'),
+            rooms.id.label('room_id'),
+            candidate.name.label('candidate'),
+            candidate.id.label('candidate_id'),
             giver.wish_string.label('my_wishes'),
             taker.first_name,
             taker.last_name,
             taker.username,
             taker.wish_string
         )
-        .join(Rooms, Rooms.id == giver.room_id, isouter=True)
-        .join(Pairs, Pairs.giver_id == giver.id, isouter=True)
+        .join(rooms, rooms.id == giver.room_id, isouter=True)
+        .join(candidate, candidate.id == giver.candidate_room_id, isouter=True)
+        .join(Pairs, and_(Pairs.giver_id == giver.id, Pairs.room_id == rooms.id), isouter=True)
         .join(taker, taker.id == Pairs.taker_id, isouter=True)
         .filter(
             giver.id == user.id
@@ -342,6 +377,7 @@ async def get_info(message):
         msg = ''
         for line, args in (
             ('Вы подсоединены к комнате {}.', (data.room,)),
+            ('Вы собираетесь присоединиться к комнате {}, но пока не ввели пароль.', (data.candidate,)),
             (f'https://t.me/{(await bot.get_me()).username}/?start={{}}', (data.room_id,)),
             ('Ваши пожелания: {}.', (data.my_wishes,)),
             ('Вы дарите подарок: @{} {} {}.', (data.username, data.first_name, data.last_name)),
@@ -433,4 +469,70 @@ async def rename_room(message):
         await bot.reply_to(message, f'Название комнаты с id:{res.id} изменено на {res.name}')
 
 
-asyncio.run(bot.polling())
+@bot.message_handler(commands=['lock'])
+async def lock(message):
+    payload = message.text[6:].strip()
+    if not payload:
+        passkey = None
+    else:
+        passkey = Encoder.encrypt(payload.encode()).decode()
+    user = await get_user(message.from_user)
+    req = (
+        update(Rooms)
+        .where(
+            Rooms.id == user.room_id,
+            Rooms.creator_id == user.id
+        )
+        .values(
+            passkey=passkey
+        )
+        .returning(Rooms.id)
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(req)
+        room_id = q.scalar()
+    if room_id is None:
+        await bot.reply_to(message, 'Только создатель комнаты может её запереть.')
+    elif passkey is None:
+        await bot.reply_to(message, 'Пароль комнаты сброшен.')
+    else:
+        await bot.reply_to(message, 'Пароль комнаты установлен.')
+
+
+@bot.message_handler(commands=['enlock'])
+async def enlock(message):
+    payload = message.text[8:].strip()
+    if not payload:
+        await bot.reply_to(message, 'Вы не ввели пароль.')
+        return
+    user = await get_user(message.from_user)
+    passkey_req = (
+        select(Rooms.passkey)
+        .filter(
+            Rooms.id == user.candidate_room_id
+        )
+    )
+    enlock_req = (
+        update(Users)
+        .where(Users.id == user.id)
+        .values(
+            candidate_room_id=None,
+            room_id=user.candidate_room_id
+        )
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(passkey_req)
+        passkey = q.scalar()
+    if passkey:
+        if payload == Encoder.decrypt(passkey.encode()).decode():
+            async with AsyncSession.begin() as session:
+                await session.execute(enlock_req)
+            await bot.reply_to(message, 'Комната открыта.')
+        else:
+            await bot.reply_to(message, 'Пароль не подходит')
+    else:
+        await bot.reply_to(message, 'Вводить пароль не требуется.')
+
+
+if __name__ == '__main__':
+    asyncio.run(bot.polling())
