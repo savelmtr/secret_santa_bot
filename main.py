@@ -201,7 +201,7 @@ async def set_pairs(message):
     Только создатель может запускать создание пар.
             ''')
 
-        pairs = await combine_pairs([m.id for m in members])
+        pairs = await combine_pairs(members)
         async with AsyncSession.begin() as session:
             del_req = (
                 delete(Pairs)
