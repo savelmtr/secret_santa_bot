@@ -302,7 +302,7 @@ async def reset_members(message):
     async with AsyncSession.begin() as session:
         await session.execute(req)
         q = await session.execute(select(cte.c.id))
-        room_name = q.scalar_or_none()
+        room_name = q.scalar()
     if room_name:
         await bot.reply_to(message, 'Комната очищена от участников, остались одни вы.')
     else:
