@@ -298,7 +298,7 @@ async def reset_members(message):
         .values(
             room_id=None
         )
-        .returning(select(cte.c.id).scalar_subquery())
+        .returning(cte.c.id)
     )
     async with AsyncSession.begin() as session:
         q = await session.execute(req)
