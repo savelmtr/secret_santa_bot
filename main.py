@@ -227,14 +227,10 @@ async def get_info(message):
             Rooms.name.label('room'),
             Rooms.id.label('room_id'),
             giver.wish_string.label('my_wishes'),
-            taker.first_name,
-            taker.last_name,
-            taker.username,
-            taker.wish_string
+
         )
-        .join(Pairs, Pairs.giver_id == giver.id, isouter=True)
-        .join(taker, taker.id == Pairs.taker_id, isouter=True)
         .join(Rooms, Rooms.id == giver.room_id, isouter=True)
+
         .filter(
             giver.id == user.id
         )
@@ -246,9 +242,7 @@ async def get_info(message):
         for line, args in (
             ('Вы подсоединены к комнате {}.', (data.room,)),
             (f'https://t.me/{(await bot.get_me()).username}/?start={{}}', (data.room_id,)),
-            ('Ваши пожелания: {}.', (data.my_wishes,)),
-            ('Вы дарите подарок: @{} {} {}.', (data.username, data.first_name, data.last_name)),
-            ('Пожелания одариваемого: {}.', (data.wish_string, ))
+            ('Ваши пожелания: {}.', (data.my_wishes,))
         ):
             if any(args):
                 msg += line.format(*map(lambda x: '' if x is None else x, args)) + '\n'
