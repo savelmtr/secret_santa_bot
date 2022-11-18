@@ -326,7 +326,7 @@ async def rename_room(message):
             name=payload
         )
         .returning(
-            Rooms.id
+            Rooms.id,
             Rooms.name
         )
     )
