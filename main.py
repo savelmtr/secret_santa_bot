@@ -196,27 +196,25 @@ async def set_pairs(message):
     Вы не являетесь создателем группы.
     Только создатель может запускать создание пар.
             ''')
-        elif len(members) % 2:
-            await bot.reply_to(message, 'В комнате нечётное число участников.')
-        else:
-            pairs = await combine_pairs([m.id for m in members])
-            async with AsyncSession.begin() as session:
-                del_req = (
-                    delete(Pairs)
-                    .where(Pairs.giver_id.in_([p[0] for p in pairs]))
-                )
-                await session.execute(del_req)
-                await session.commit()
-                for (giver, taker) in pairs:
-                    session.add(
-                        Pairs(
-                            giver_id=giver,
-                            taker_id=taker
-                        )
+
+        pairs = await combine_pairs([m.id for m in members])
+        async with AsyncSession.begin() as session:
+            del_req = (
+                delete(Pairs)
+                .where(Pairs.giver_id.in_([p[0] for p in pairs]))
+            )
+            await session.execute(del_req)
+            await session.commit()
+            for (giver, taker) in pairs:
+                session.add(
+                    Pairs(
+                        giver_id=giver,
+                        taker_id=taker
                     )
-            await bot.reply_to(message, '''
+                )
+        await bot.reply_to(message, '''
     Пары созданы.
-            ''')
+        ''')
 
 
 @bot.message_handler(commands=['info'])
