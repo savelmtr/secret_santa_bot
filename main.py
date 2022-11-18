@@ -21,7 +21,7 @@ engine = create_async_engine(
 AsyncSession = async_sessionmaker(engine, expire_on_commit=False)
 bot = AsyncTeleBot(TOKEN)
 
-# TODO: rename, lock
+# TODO: lock
 
 @bot.message_handler(commands=['help'])
 async def send_welcome(message):
@@ -34,6 +34,7 @@ async def send_welcome(message):
     /info -- узнать статус (название комнаты, 
     свои пожелания по подаркам, кому дарим, пожелания одариваемого)
     /myrooms -- информация о комнатах, созданных нами
+    /members -- посмотреть список участников комнаты. 
 
 
     ** Следующие операции может осуществлять только создатель комнаты **
@@ -42,8 +43,6 @@ async def send_welcome(message):
     По умолчанию комната не защищена от присоединения к ней людей.
     Чтобы случайные люди не имели возможности испортить ваш уютный междусобойчик,
     их можно "запирать" паролем. Чтобы сбросить пароль введите /lock.
-
-    * /members -- посмотреть список участников комнаты. 
 
     * /set_pairs -- сгенерировать дарительные пары.
 
