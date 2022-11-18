@@ -21,7 +21,7 @@ engine = create_async_engine(
 AsyncSession = async_sessionmaker(engine, expire_on_commit=False)
 bot = AsyncTeleBot(TOKEN)
 
-# TODO: reset, rename, lock
+# TODO: rename, lock
 
 @bot.message_handler(commands=['help'])
 async def send_welcome(message):
@@ -262,7 +262,7 @@ async def get_info(message):
 
 
 @bot.message_handler(commands=['myrooms'])
-async def get_info(message):
+async def get_my_rooms(message):
     user = await get_user(message.from_user)
     req = (
         select(Rooms)
@@ -276,6 +276,31 @@ async def get_info(message):
     else:
         msg = '\n'.join([f'{r.id} {r.name}' for r in rooms])
         await bot.reply_to(message, msg)
+
+
+@bot.message_handler(commands=['reset'])
+async def reset_members(message):
+    user = await get_user(message.from_user)
+    req = (
+        update(Users)
+        .join(Rooms, Rooms.id == Users.room_id)
+        .where(
+            Rooms.id == user.room_id,
+            Rooms.creator_id == user.id,
+            Users.id != user.id
+        )
+        .values(
+            Users.room_id=None
+        )
+        .returning(Rooms.name)
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(req)
+        room_name = q.scalar_or_none()
+    if room_name:
+        await bot.reply_to(message, 'Комната очищена от участников, остались одни вы.')
+    else:
+        await bot.reply_to(message, 'Вы не являетесь создателем этой комнаты либо не состоите пока ни в одной.')
 
 
 asyncio.run(bot.polling())
