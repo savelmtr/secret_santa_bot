@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+
 from sqlalchemy import update, insert, delete
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.future import select
@@ -30,8 +31,9 @@ class ButtonStorage(StatesGroup):
 
 
 AsyncSession = async_sessionmaker(engine, expire_on_commit=False)
-bot = AsyncTeleBot(TOKEN, state_storage=StateMemoryStorage())
-bot.add_custom_filter(asyncio_filters.StateFilter(bot))
+bot = AsyncTeleBot(TOKEN)
+
+# TODO: lock
 
 @bot.message_handler(commands=['help'])
 async def send_welcome(message, markup):
@@ -44,6 +46,7 @@ async def send_welcome(message, markup):
     /info -- узнать статус (название комнаты, 
     свои пожелания по подаркам, кому дарим, пожелания одариваемого)
     /myrooms -- информация о комнатах, созданных нами
+    /members -- посмотреть список участников комнаты. 
 
 
     ** Следующие операции может осуществлять только создатель комнаты **
@@ -52,8 +55,6 @@ async def send_welcome(message, markup):
     По умолчанию комната не защищена от присоединения к ней людей.
     Чтобы случайные люди не имели возможности испортить ваш уютный междусобойчик,
     их можно "запирать" паролем. Чтобы сбросить пароль введите /lock.
-
-    * /members -- посмотреть список участников комнаты. 
 
     * /set_pairs -- сгенерировать дарительные пары.
 
@@ -223,8 +224,12 @@ async def set_wish(message):
     if not payload:
         await bot.reply_to(message, f'Введите список желаемого.')
     else:
+        user = await get_user(message.from_user)
         req = (
             update(Users)
+            .where(
+                Users.id == user.id
+            )
             .values(
                 wish_string=payload
             )
@@ -288,27 +293,25 @@ async def set_pairs(message):
     Вы не являетесь создателем группы.
     Только создатель может запускать создание пар.
             ''')
-        elif len(members) % 2:
-            await bot.reply_to(message, 'В комнате нечётное число участников.')
-        else:
-            pairs = await combine_pairs([m.id for m in members])
-            async with AsyncSession.begin() as session:
-                del_req = (
-                    delete(Pairs)
-                    .where(Pairs.giver_id.in_([p[0] for p in pairs]))
-                )
-                await session.execute(del_req)
-                await session.commit()
-                for (giver, taker) in pairs:
-                    session.add(
-                        Pairs(
-                            giver_id=giver,
-                            taker_id=taker
-                        )
+
+        pairs = await combine_pairs(members)
+        async with AsyncSession.begin() as session:
+            del_req = (
+                delete(Pairs)
+                .where(Pairs.giver_id.in_([p[0] for p in pairs]))
+            )
+            await session.execute(del_req)
+        async with AsyncSession.begin() as session:
+            for (giver, taker) in pairs:
+                session.add(
+                    Pairs(
+                        giver_id=giver,
+                        taker_id=taker
                     )
-            await bot.reply_to(message, '''
+                )
+        await bot.reply_to(message, '''
     Пары созданы.
-            ''')
+        ''')
 
 
 @bot.message_handler(commands=['info'])
@@ -326,9 +329,9 @@ async def get_info(message):
             taker.username,
             taker.wish_string
         )
+        .join(Rooms, Rooms.id == giver.room_id, isouter=True)
         .join(Pairs, Pairs.giver_id == giver.id, isouter=True)
         .join(taker, taker.id == Pairs.taker_id, isouter=True)
-        .join(Rooms, Rooms.id == giver.room_id, isouter=True)
         .filter(
             giver.id == user.id
         )
@@ -338,11 +341,11 @@ async def get_info(message):
         data = q.one_or_none()
         msg = ''
         for line, args in (
-                ('Вы подсоединены к комнате {}.', (data.room,)),
-                (f'https://t.me/{(await bot.get_me()).username}/?start={{}}', (data.room_id,)),
-                ('Ваши пожелания: {}.', (data.my_wishes,)),
-                ('Вы дарите подарок: @{} {} {}.', (data.username, data.first_name, data.last_name)),
-                ('Пожелания одариваемого: {}.', (data.wish_string,))
+            ('Вы подсоединены к комнате {}.', (data.room,)),
+            (f'https://t.me/{(await bot.get_me()).username}/?start={{}}', (data.room_id,)),
+            ('Ваши пожелания: {}.', (data.my_wishes,)),
+            ('Вы дарите подарок: @{} {} {}.', (data.username, data.first_name, data.last_name)),
+            ('Пожелания одариваемого: {}.', (data.wish_string, ))
         ):
             if any(args):
                 msg += line.format(*map(lambda x: '' if x is None else x, args)) + '\n'
@@ -350,6 +353,84 @@ async def get_info(message):
             await bot.reply_to(message, msg)
         else:
             await bot.reply_to(message, "Бот пока с вами не знаком.")
+
+
+@bot.message_handler(commands=['myrooms'])
+async def get_my_rooms(message):
+    user = await get_user(message.from_user)
+    req = (
+        select(Rooms)
+        .filter(Rooms.creator_id == user.id)
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(req)
+        rooms = q.scalars().all()
+    if not rooms:
+        await bot.reply_to(message, 'Вы не являетесь владельцем ни одной комнаты.')
+    else:
+        msg = '\n'.join([f'{r.id} {r.name}' for r in rooms])
+        await bot.reply_to(message, msg)
+
+
+@bot.message_handler(commands=['reset'])
+async def reset_members(message):
+    user = await get_user(message.from_user)
+    cte = (
+        select(Rooms.id)
+        .filter(
+            Rooms.id == user.room_id,
+            Rooms.creator_id == user.id
+        )
+        .cte('cte')
+    )
+    req = (
+        update(Users)
+        .where(
+            Users.room_id == select(cte.c.id).scalar_subquery(),
+            Users.id != user.id
+        )
+        .values(
+            room_id=None
+        )
+    )
+    async with AsyncSession.begin() as session:
+        await session.execute(req)
+        q = await session.execute(select(cte.c.id))
+        room_name = q.scalar()
+    if room_name:
+        await bot.reply_to(message, 'Комната очищена от участников, остались одни вы.')
+    else:
+        await bot.reply_to(message, 'Вы не являетесь создателем этой комнаты либо не состоите пока ни в одной.')
+
+
+@bot.message_handler(commands=['rename'])
+async def rename_room(message):
+    payload = message.text[7:].strip()
+    if not payload:
+        await bot.reply_to(message, 'Вы не ввели нового названия комнаты.')
+        return
+    user = await get_user(message.from_user)
+    req = (
+        update(Rooms)
+        .where(
+            Rooms.id == user.room_id,
+            Rooms.creator_id == user.id
+        )
+        .values(
+            name=payload
+        )
+        .returning(
+            Rooms.id,
+            Rooms.name
+        )
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(req)
+        res = q.one_or_none()
+    if not res:
+        await bot.reply_to(message, 'Вы не являетесь создателем комнаты, чтобы менять её название.')
+    else:
+        await bot.reply_to(message, f'Название комнаты с id:{res.id} изменено на {res.name}')
 
 
 asyncio.run(bot.polling())
