@@ -1,6 +1,7 @@
 from sqlalchemy import Column, ForeignKey, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 
+
 Base = declarative_base()
 
 
@@ -10,6 +11,7 @@ class Rooms(Base):
     creator_id = Column(Integer, ForeignKey("users.id"))
     name = Column(String, nullable=False)
     passkey = Column(String)
+    max_price = Column(String)
 
 
 class Users(Base):

@@ -15,6 +15,10 @@ from telebot import asyncio_filters
 from models import Rooms, Users, Pairs
 import random
 from cryptography.fernet import Fernet
+from asyncache import cached
+from cachetools import TTLCache
+from telebot.types import User as TelebotUser
+from telebot.types import Message
 
 
 NUM_PTTRN = re.compile(r'\d+')
@@ -38,7 +42,7 @@ bot = AsyncTeleBot(TOKEN)
 
 
 @bot.message_handler(commands=['help'])
-async def send_welcome(message, markup):
+async def send_welcome(message: Message, markup):
     await bot.reply_to(message, """\
     Это бот-помощник тайного Деда Мороза.
 
@@ -64,10 +68,13 @@ async def send_welcome(message, markup):
     * /reset -- удалить всех участников из комнаты.
 
     * /rename -- переименовать комнату.
+    
+    * /set_max_price -- установить максимальную цену подарка
     """, reply_markup=markup)
 
 
-async def get_user(user_payload) -> Users:
+@cached(TTLCache(1024, 60), lambda x: x.id)
+async def get_user(user_payload: TelebotUser) -> Users:
     req = (
         insert(Users)
         .values(
@@ -91,7 +98,7 @@ async def get_user(user_payload) -> Users:
     return user
 
 
-async def create_room(name: str, user_payload) -> int:
+async def create_room(name: str, user_payload: TelebotUser) -> int:
     user = await get_user(user_payload)
     req = insert(Rooms).values(
         name=name,
@@ -112,7 +119,7 @@ async def create_room(name: str, user_payload) -> int:
         return room_id
 
 
-async def to_room_attach(room_id: int, user_payload) -> tuple[str | None, bool]:
+async def to_room_attach(room_id: int, user_payload: TelebotUser) -> tuple[str | None, bool]:
     user = await get_user(user_payload)
     room_id_req = select(Rooms).filter(Rooms.id == room_id)
     attaching = update(Users).where(Users.id == user.id)
@@ -135,7 +142,7 @@ async def to_room_attach(room_id: int, user_payload) -> tuple[str | None, bool]:
             return room.name, False
 
 
-async def set_user_name_data(name, surname, user_payload) -> str | None:
+async def set_user_name_data(name, surname, user_payload: TelebotUser) -> str | None:
     user = await get_user(user_payload)
     user_id = user.id
     if user.last_name and user.first_name:
@@ -164,14 +171,14 @@ async def callback_query(call):
         await bot.set_state(call.from_user.id, ButtonStorage.connect_room, call.message.chat.id)
 
 @bot.message_handler(state=ButtonStorage.create_room)
-async def create_room_(message):
+async def create_room_(message: Message):
     room_name = message.text
     room_id = await create_room(room_name, message.from_user)
     await bot.reply_to(message, f'Вы создали комнату {room_name} c id {room_id}')
 
 
 @bot.message_handler(state=ButtonStorage.connect_room)
-async def connect_room_(message):
+async def connect_room_(message: Message):
     room_id = message.text
     room_name, is_protected = await to_room_attach(int(room_id), message.from_user)
     if not room_name:
@@ -194,7 +201,7 @@ async def connect_room_(message):
 
 
 @bot.message_handler(state=ButtonStorage.user_name)
-async def get_user_name(message):
+async def get_user_name(message: Message):
     name, surname = str(message.text).split(' ')
     result = await set_user_name_data(name, surname, message.from_user)
     await bot.send_message(message.chat.id, f'А теперь введите список желаемых подарков')
@@ -202,7 +209,7 @@ async def get_user_name(message):
 
 
 @bot.message_handler(state=ButtonStorage.wish_list)
-async def get_user_name(message):
+async def get_user_name(message: Message):
     payload = message.text
     if not payload:
         await bot.reply_to(message, f'Введите список желаемого.')
@@ -222,7 +229,7 @@ async def get_user_name(message):
 
 
 @bot.message_handler(commands=['start'])
-async def get_room(message):
+async def get_room(message: Message):
     # if not payload:
     create_room_btn = types.InlineKeyboardButton(text='Создать комнату', callback_data='create_room')
     connect_room_btn = types.InlineKeyboardButton(text='Подключиться к комнате', callback_data='connect_room')
@@ -244,7 +251,7 @@ async def get_room(message):
 
 
 @bot.message_handler(commands=['wish'])
-async def set_wish(message):
+async def set_wish(message: Message):
     payload = message.text[6:].strip()
     if not payload:
         await bot.reply_to(message, f'Введите список желаемого.')
@@ -265,7 +272,7 @@ async def set_wish(message):
 
 
 @bot.message_handler(commands=['members'])
-async def show_members(message):
+async def show_members(message: Message):
     user = await get_user(message.from_user)
     if not user.room_id:
         await bot.reply_to(message, f'Вы не подсоединены ни к одной комнате.')
@@ -297,7 +304,7 @@ def combine_pairs(members: list[int]):
 
 
 @bot.message_handler(commands=['set_pairs'])
-async def set_pairs(message):
+async def set_pairs(message: Message):
     user = await get_user(message.from_user)
     if not user.room_id:
         await bot.reply_to(message, f'Вы не подсоединены ни к одной комнате.')
@@ -345,7 +352,7 @@ async def set_pairs(message):
 
 
 @bot.message_handler(commands=['info'])
-async def get_info(message):
+async def get_info(message: Message):
     user = await get_user(message.from_user)
     giver = aliased(Users)
     taker = aliased(Users)
@@ -355,6 +362,7 @@ async def get_info(message):
         select(
             rooms.name.label('room'),
             rooms.id.label('room_id'),
+            rooms.max_price,
             candidate.name.label('candidate'),
             candidate.id.label('candidate_id'),
             giver.wish_string.label('my_wishes'),
@@ -377,6 +385,7 @@ async def get_info(message):
         msg = ''
         for line, args in (
             ('Вы подсоединены к комнате {}.', (data.room,)),
+            ('Максимальная цена подарка: {}', (data.max_price,)),
             ('Вы собираетесь присоединиться к комнате {}, но пока не ввели пароль.', (data.candidate,)),
             (f'https://t.me/{(await bot.get_me()).username}/?start={{}}', (data.room_id,)),
             ('Ваши пожелания: {}.', (data.my_wishes,)),
@@ -392,7 +401,7 @@ async def get_info(message):
 
 
 @bot.message_handler(commands=['myrooms'])
-async def get_my_rooms(message):
+async def get_my_rooms(message: Message):
     user = await get_user(message.from_user)
     req = (
         select(Rooms)
@@ -409,7 +418,7 @@ async def get_my_rooms(message):
 
 
 @bot.message_handler(commands=['reset'])
-async def reset_members(message):
+async def reset_members(message: Message):
     user = await get_user(message.from_user)
     cte = (
         select(Rooms.id)
@@ -440,7 +449,7 @@ async def reset_members(message):
 
 
 @bot.message_handler(commands=['rename'])
-async def rename_room(message):
+async def rename_room(message: Message):
     payload = message.text[7:].strip()
     if not payload:
         await bot.reply_to(message, 'Вы не ввели нового названия комнаты.')
@@ -470,7 +479,7 @@ async def rename_room(message):
 
 
 @bot.message_handler(commands=['lock'])
-async def lock(message):
+async def lock(message: Message):
     payload = message.text[6:].strip()
     if not payload:
         passkey = None
@@ -500,7 +509,7 @@ async def lock(message):
 
 
 @bot.message_handler(commands=['enlock'])
-async def enlock(message):
+async def enlock(message: Message):
     payload = message.text[8:].strip()
     if not payload:
         await bot.reply_to(message, 'Вы не ввели пароль.')
@@ -533,6 +542,36 @@ async def enlock(message):
     else:
         await bot.reply_to(message, 'Вводить пароль не требуется.')
 
+
+@bot.message_handler(commands=['set_max_price'])
+async def set_max_price(message: Message):
+    payload = message.text[14:].strip()
+    user = await get_user(message.from_user)
+    req = (
+        update(Rooms)
+        .where(
+            Rooms.id == user.room_id,
+            Rooms.creator_id == user.id
+        )
+        .values(
+            max_price=payload
+        )
+        .returning(
+            Rooms.name
+        )
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(req)
+        name = q.scalar()
+    if not name:
+        await bot.reply_to(
+            message,
+            f'Только создатель комнаты может устанавливать максимальную цену подарка в ней.'
+        )
+    elif payload:
+        await bot.reply_to(message, f'Установлена максимальная цена подарка для комнаты {name} ({payload}).')
+    else:
+        await bot.reply_to(message, f'Сброшена максимальная цена подарка для комнаты {name}.')
 
 if __name__ == '__main__':
     asyncio.run(bot.polling())

@@ -5,3 +5,4 @@ psycopg2-binary
 asyncpg
 sqlalchemy==2.0.0b3
 cryptography
+asyncache == 0.3.1
