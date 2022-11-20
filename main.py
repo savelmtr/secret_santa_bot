@@ -21,6 +21,7 @@ from cachetools import TTLCache
 from telebot.types import User as TelebotUser
 from telebot.types import Message
 
+
 NUM_PTTRN = re.compile(r'\d+')
 TOKEN = os.getenv('TOKEN')
 Encoder = Fernet(os.getenv('SECRET').encode())
@@ -28,6 +29,8 @@ engine = create_async_engine(
     os.getenv('PG_URI_ASYNC'),
     echo=False
 )
+AsyncSession = async_sessionmaker(engine, expire_on_commit=False)
+UserCache = TTLCache(1024, 60)
 
 
 class ButtonStorage(StatesGroup):
@@ -42,7 +45,6 @@ class ButtonStorage(StatesGroup):
     max_price = State()
 
 
-AsyncSession = async_sessionmaker(engine, expire_on_commit=False)
 bot = AsyncTeleBot(TOKEN, state_storage=StateMemoryStorage())
 bot.add_custom_filter(asyncio_filters.StateFilter(bot))
 
@@ -79,7 +81,7 @@ async def send_welcome(message: Message, markup):
     """, reply_markup=markup)
 
 
-@cached(TTLCache(1024, 60), lambda x: x.id)
+@cached(UserCache, lambda x: x.id)
 async def get_user(user_payload: TelebotUser) -> Users:
     req = (
         insert(Users)
@@ -121,7 +123,7 @@ async def create_room(name: str, user_payload: TelebotUser) -> int:
             )
         )
         await session.execute(up_req)
-        get_user.cache.clear()
+        UserCache.clear()
         return room_id
 
 
@@ -131,7 +133,7 @@ async def to_room_attach(room_id: int, user_payload: TelebotUser) -> tuple[str |
     attaching = update(Users).where(Users.id == user.id)
     attaching_no_pass = attaching.values(room_id=room_id, candidate_room_id=None)
     attaching_secure = attaching.values(candidate_room_id=room_id, room_id=None)
-    get_user.cache.clear()
+    UserCache.clear()
     async with AsyncSession.begin() as session:
         q = await session.execute(room_id_req)
         room = q.scalar()
@@ -162,7 +164,7 @@ async def set_user_name_data(name, surname, user_payload: TelebotUser) -> None:
     )
     async with AsyncSession.begin() as session:
         await session.execute(naming_req)
-    get_user.cache.clear()
+    UserCache.clear()
 
 
 async def get_user_info(user_payload, status='connect'):
@@ -232,7 +234,7 @@ async def set_wishes(message, wishes):
     )
     async with AsyncSession.begin() as session:
         await session.execute(req)
-    get_user.cache.clear()
+    UserCache.clear()
 
 
 async def get_max_price(user_id):
@@ -516,7 +518,7 @@ async def set_wish(message: Message):
                 wish_string=payload
             )
         )
-        get_user.cache.clear()
+        UserCache.clear()
         async with AsyncSession.begin() as session:
             await session.execute(req)
         await bot.reply_to(message, f'В желаемое добавлено: {payload}')
@@ -690,7 +692,7 @@ async def reset_members(message: Message):
             room_id=None
         )
     )
-    get_user.cache.clear()
+    UserCache.clear()
     async with AsyncSession.begin() as session:
         await session.execute(req)
         q = await session.execute(select(cte.c.id))
@@ -790,7 +792,7 @@ async def enlock(message: Message):
         if payload == Encoder.decrypt(passkey.encode()).decode():
             async with AsyncSession.begin() as session:
                 await session.execute(enlock_req)
-            get_user.cache.clear()
+            UserCache.clear()
             await bot.reply_to(message, 'Комната открыта.')
             await bot.send_message(message.chat.id,
                                    'Напиши свои Имя и Фамилию чтобы я внес тебя в список участников! 😇')
