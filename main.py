@@ -79,7 +79,7 @@ async def send_welcome(message: Message, markup):
     """, reply_markup=markup)
 
 
-# @cached(TTLCache(1024, 60), lambda x: x.id)
+@cached(TTLCache(1024, 60), lambda x: x.id)
 async def get_user(user_payload: TelebotUser) -> Users:
     req = (
         insert(Users)
@@ -121,6 +121,7 @@ async def create_room(name: str, user_payload: TelebotUser) -> int:
             )
         )
         await session.execute(up_req)
+        get_user.cache_clear()
         return room_id
 
 
@@ -130,6 +131,7 @@ async def to_room_attach(room_id: int, user_payload: TelebotUser) -> tuple[str |
     attaching = update(Users).where(Users.id == user.id)
     attaching_no_pass = attaching.values(room_id=room_id, candidate_room_id=None)
     attaching_secure = attaching.values(candidate_room_id=room_id, room_id=None)
+    get_user.cache_clear()
     async with AsyncSession.begin() as session:
         q = await session.execute(room_id_req)
         room = q.scalar()
@@ -147,7 +149,7 @@ async def to_room_attach(room_id: int, user_payload: TelebotUser) -> tuple[str |
             return room.name, False
 
 
-async def set_user_name_data(name, surname, user_payload: TelebotUser) -> str | None:
+async def set_user_name_data(name, surname, user_payload: TelebotUser) -> None:
     user = await get_user(user_payload)
     user_id = user.id
     naming_req = (
@@ -160,7 +162,7 @@ async def set_user_name_data(name, surname, user_payload: TelebotUser) -> str | 
     )
     async with AsyncSession.begin() as session:
         await session.execute(naming_req)
-        return
+    get_user.cache_clear()
 
 
 async def get_user_info(user_payload, status='connect'):
@@ -184,22 +186,28 @@ async def get_user_info(user_payload, status='connect'):
         q = await session.execute(req)
         data = q.one_or_none()
         if status == 'connect':
-            msg = CALLBACK_TEXTS.congratulations.format(room=data.room,
-                                                        my_wishes=data.my_wishes,
-                                                        username=data.username,
-                                                        first_name=data.first_name,
-                                                        last_name=data.last_name)
+            msg = CALLBACK_TEXTS.congratulations.format(
+                room=data.room,
+                my_wishes=data.my_wishes,
+                username=data.username,
+                first_name=data.first_name,
+                last_name=data.last_name
+            )
         elif status == 'update':
-            msg = CALLBACK_TEXTS.update.format(my_wishes=data.my_wishes,
-                                               username=data.username,
-                                               first_name=data.first_name,
-                                               last_name=data.last_name)
+            msg = CALLBACK_TEXTS.update.format(
+                my_wishes=data.my_wishes,
+                    username=data.username,
+                    first_name=data.first_name,
+                    last_name=data.last_name
+                )
         else:
-            msg = CALLBACK_TEXTS.info.format(room=data.room,
-                                             my_wishes=data.my_wishes,
-                                             username=data.username,
-                                             first_name=data.first_name,
-                                             last_name=data.last_name)
+            msg = CALLBACK_TEXTS.info.format(
+                room=data.room,
+                my_wishes=data.my_wishes,
+                username=data.username,
+                first_name=data.first_name,
+                last_name=data.last_name
+            )
         return msg
 
 
@@ -224,15 +232,14 @@ async def set_wishes(message, wishes):
     )
     async with AsyncSession.begin() as session:
         await session.execute(req)
+    get_user.cache_clear()
 
 
 async def get_max_price(user_id):
-    user = aliased(Users)
-    room = aliased(Rooms)
     req = (
-        select(room.max_price)
-        .join(user, room.id == user.room_id)
-        .filter(user.id == user_id)
+        select(Rooms.max_price)
+        .join(Users, Rooms.id == Users.room_id)
+        .filter(Users.id == user_id)
     )
     async with AsyncSession.begin() as session:
         q = await session.execute(req)
@@ -509,6 +516,7 @@ async def set_wish(message: Message):
                 wish_string=payload
             )
         )
+        get_user.cache_clear()
         async with AsyncSession.begin() as session:
             await session.execute(req)
         await bot.reply_to(message, f'В желаемое добавлено: {payload}')
@@ -682,6 +690,7 @@ async def reset_members(message: Message):
             room_id=None
         )
     )
+    get_user.cache_clear()
     async with AsyncSession.begin() as session:
         await session.execute(req)
         q = await session.execute(select(cte.c.id))
@@ -781,6 +790,7 @@ async def enlock(message: Message):
         if payload == Encoder.decrypt(passkey.encode()).decode():
             async with AsyncSession.begin() as session:
                 await session.execute(enlock_req)
+            get_user.cache_clear()
             await bot.reply_to(message, 'Комната открыта.')
             await bot.send_message(message.chat.id,
                                    'Напиши свои Имя и Фамилию чтобы я внес тебя в список участников! 😇')
