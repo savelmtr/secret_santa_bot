@@ -121,7 +121,7 @@ async def create_room(name: str, user_payload: TelebotUser) -> int:
             )
         )
         await session.execute(up_req)
-        get_user.cache_clear()
+        get_user.cache.clear()
         return room_id
 
 
@@ -131,7 +131,7 @@ async def to_room_attach(room_id: int, user_payload: TelebotUser) -> tuple[str |
     attaching = update(Users).where(Users.id == user.id)
     attaching_no_pass = attaching.values(room_id=room_id, candidate_room_id=None)
     attaching_secure = attaching.values(candidate_room_id=room_id, room_id=None)
-    get_user.cache_clear()
+    get_user.cache.clear()
     async with AsyncSession.begin() as session:
         q = await session.execute(room_id_req)
         room = q.scalar()
@@ -162,7 +162,7 @@ async def set_user_name_data(name, surname, user_payload: TelebotUser) -> None:
     )
     async with AsyncSession.begin() as session:
         await session.execute(naming_req)
-    get_user.cache_clear()
+    get_user.cache.clear()
 
 
 async def get_user_info(user_payload, status='connect'):
@@ -232,7 +232,7 @@ async def set_wishes(message, wishes):
     )
     async with AsyncSession.begin() as session:
         await session.execute(req)
-    get_user.cache_clear()
+    get_user.cache.clear()
 
 
 async def get_max_price(user_id):
@@ -516,7 +516,7 @@ async def set_wish(message: Message):
                 wish_string=payload
             )
         )
-        get_user.cache_clear()
+        get_user.cache.clear()
         async with AsyncSession.begin() as session:
             await session.execute(req)
         await bot.reply_to(message, f'В желаемое добавлено: {payload}')
@@ -690,7 +690,7 @@ async def reset_members(message: Message):
             room_id=None
         )
     )
-    get_user.cache_clear()
+    get_user.cache.clear()
     async with AsyncSession.begin() as session:
         await session.execute(req)
         q = await session.execute(select(cte.c.id))
@@ -790,7 +790,7 @@ async def enlock(message: Message):
         if payload == Encoder.decrypt(passkey.encode()).decode():
             async with AsyncSession.begin() as session:
                 await session.execute(enlock_req)
-            get_user.cache_clear()
+            get_user.cache.clear()
             await bot.reply_to(message, 'Комната открыта.')
             await bot.send_message(message.chat.id,
                                    'Напиши свои Имя и Фамилию чтобы я внес тебя в список участников! 😇')
