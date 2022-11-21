@@ -422,6 +422,7 @@ async def is_in_room(room_id, user_id):
     async with AsyncSession.begin() as session:
         q = await session.execute(req)
         res = q.scalar()
+        print(res)
         return True if res else False
 
 
@@ -436,7 +437,7 @@ async def get_room(message: Message):
         markup.add(connect_room_btn)
         await send_welcome(message, markup)
     else:
-        in_room = await is_in_room(payload, message.from_user.id)
+        in_room = await is_in_room(int(payload), message.from_user.id)
         if not in_room:
             room_name, is_protected = await to_room_attach(int(payload), message.from_user)
             if is_protected:
