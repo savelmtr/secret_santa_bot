@@ -405,6 +405,17 @@ async def enter_max_price(message):
     await bot.delete_state(message.from_user.id, message.chat.id)
 
 
+async def is_in_room(room_id, user_id):
+    req = (
+        select(Users.id)
+        .filter(Users.room_id == room_id, Users.id == user_id)
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(req)
+        res = q.scalar()
+        return True if res else False
+
+
 @bot.message_handler(commands=['start'])
 async def get_room(message: Message):
     payload = message.text[6:].strip()
@@ -416,15 +427,20 @@ async def get_room(message: Message):
         markup.add(connect_room_btn)
         await send_welcome(message, markup)
     else:
-        room_name, is_protected = await to_room_attach(int(payload), message.from_user)
-        if is_protected:
-            await bot.send_message(message.chat.id, 'Ох-хоу-хоу 🎅'
-                                                    f'Похоже комната  {room_name} запоролена.'
-                                                    f'Введите пожалуйста пароль')
-            await bot.set_state(message.from_user.id, ButtonStorage.enter_password, message.chat.id)
+        in_room = await is_in_room(payload, message.from_user.id)
+        if not in_room:
+            room_name, is_protected = await to_room_attach(int(payload), message.from_user)
+            if is_protected:
+                await bot.send_message(message.chat.id, 'Ох-хоу-хоу 🎅'
+                                                        f'Похоже комната  {room_name} запоролена.'
+                                                        f'Введите пожалуйста пароль')
+                await bot.set_state(message.from_user.id, ButtonStorage.enter_password, message.chat.id)
+            else:
+                await bot.reply_to(message, CALLBACK_TEXTS.connect_to_room.format(room_name=room_name))
+                await bot.set_state(message.from_user.id, ButtonStorage.user_name, message.chat.id)
         else:
-            await bot.reply_to(message, CALLBACK_TEXTS.connect_to_room.format(room_name=room_name))
-            await bot.set_state(message.from_user.id, ButtonStorage.user_name, message.chat.id)
+            markup = await button_generator(message.from_user.id)
+            await bot.send_message(message.chat.id, 'Хо-хо-хо! Вы вернулись!', reply_markup=markup)
 
 
 async def is_paired(user_payload):
