@@ -268,8 +268,11 @@ async def update_name(message):
     name_data = str(message.text).split(' ')
     if len(name_data) != 2:
         await bot.reply_to(message, 'Введите пожалуйста Имя и Фамилию в 2 слова 😀')
-        await bot.set_state(message.from_user.id, ButtonStorage.update_name, message.chat.id)
+        await bot.set_state(message.from_user.id, ButtonStorage.user_name, message.chat.id)
     first_name, last_name = name_data
+    if not str(first_name).isalpha() or not str(last_name).isalpha():
+        await bot.reply_to(message, 'Введите пожалуйста Имя и Фамилию в 2 слова используя только буквы 😀')
+        await bot.set_state(message.from_user.id, ButtonStorage.user_name, message.chat.id)
     await set_user_name_data(first_name, last_name, message.from_user)
     await bot.delete_state(message.from_user.id, message.chat.id)
     msg = await get_user_info(message.from_user, status='update')
