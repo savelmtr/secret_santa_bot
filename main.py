@@ -276,7 +276,7 @@ async def button_text_handler(message):
     msg = ''
     match command:
         case 'Участники комнаты 👥':
-            msg = await get_members(message)
+            msg = await get_members(message.from_user)
             await bot.reply_to(message, msg, reply_markup=markup)
         case 'Мои данные 📋':
             paired = await is_paired(message.from_user)
