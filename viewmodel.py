@@ -1,14 +1,17 @@
+import os
+import random
+
 from asyncache import cached
 from cachetools import TTLCache
-from telebot.types import User as TelebotUser
-from sqlalchemy import update, and_
+from sqlalchemy import and_, update
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-import os
-from models import Rooms, Users, Pairs
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.future import select
+from sqlalchemy.orm import aliased
+from telebot.types import User as TelebotUser
+
 from callback_texts import CALLBACK_TEXTS
-import random
+from models import Pairs, Rooms, Users
 
 
 UserCache = TTLCache(1024, 60)

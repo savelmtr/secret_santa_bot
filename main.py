@@ -4,7 +4,6 @@ import re
 
 from cryptography.fernet import Fernet
 from sqlalchemy import and_, update
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.future import select
 from sqlalchemy.orm import aliased
 from telebot import asyncio_filters, types
@@ -16,10 +15,11 @@ from telebot.types import User as TelebotUser
 
 from callback_texts import CALLBACK_TEXTS
 from models import Pairs, Rooms, Users
+from viewmodel import (AsyncSession, UserCache, create_room, get_max_price,
+                       get_members, get_user, get_user_info, is_admin,
+                       is_paired, set_pairs, set_user_name_data, set_wishes,
+                       to_room_attach)
 
-from viewmodel import (AsyncSession, UserCache, create_room, get_max_price, get_members, is_paired, set_pairs,
-                        get_user, get_user_info, is_admin, set_user_name_data,
-                        set_wishes, to_room_attach)
 
 NUM_PTTRN = re.compile(r'\d+')
 TOKEN = os.getenv('TOKEN')
@@ -247,7 +247,7 @@ async def get_room(message: Message):
         markup.add(connect_room_btn)
         await send_welcome(message, markup)
     else:
-        user = await get_user(message.from_user.id)
+        user = await get_user(message.from_user)
         try:
             in_room = int(payload) == user.room_id
         except ValueError:
