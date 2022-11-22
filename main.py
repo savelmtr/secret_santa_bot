@@ -99,7 +99,7 @@ async def update_name(message):
     await set_user_name_data(first_name, last_name, message.from_user)
     await bot.delete_state(message.from_user.id, message.chat.id)
     msg = await get_user_info(message.from_user, status='update')
-    markup = await button_generator(message.from_user.id)
+    markup = await button_generator(message.from_user)
     await bot.reply_to(message, msg, reply_markup=markup)
 
 
@@ -109,7 +109,7 @@ async def update_wishes(message):
     await set_wishes(message.from_user.id, wishes)
     await bot.delete_state(message.from_user.id, message.chat.id)
     msg = await get_user_info(message.from_user, status='update')
-    markup = await button_generator(message.from_user.id)
+    markup = await button_generator(message.from_user)
     await bot.reply_to(message, msg, reply_markup=markup)
 
 
@@ -141,7 +141,7 @@ async def create_room_(message):
     await bot.send_message(message.chat.id, CALLBACK_TEXTS.link.format(room_name=room_name,
                                                                        bot_name=bot_info.username,
                                                                        room_id=room_id))
-    markup = await button_generator(message.from_user.id)
+    markup = await button_generator(message.from_user)
 
     msg = await get_user_info(message.from_user)
     await bot.send_message(message.chat.id, f'Вы успешно создали комнату {room_name}!\n'
@@ -165,7 +165,7 @@ async def callback_query(call):
 @bot.message_handler(state=ButtonStorage.create_password)
 async def create_password_(message: Message):
     room_id = await lock(message)
-    markup = await button_generator(message.from_user.id)
+    markup = await button_generator(message.from_user)
     await bot.delete_state(message.from_user.id, message.chat.id)
     await bot.send_message(message.chat.id, 'Вы установили пароль для комнаты! \n'
                                             f'Пароль: {message.text}', reply_markup=markup)
@@ -226,7 +226,7 @@ async def get_user_wishes(message: Message):
         await set_wishes(message.from_user.id, payload)
     await bot.delete_state(message.from_user.id, message.chat.id)
     msg = await get_user_info(message.from_user)
-    markup = await button_generator(message.from_user.id)
+    markup = await button_generator(message.from_user)
     await bot.reply_to(message, msg, reply_markup=markup)
 
 
@@ -264,7 +264,7 @@ async def get_room(message: Message):
                 await bot.reply_to(message, CALLBACK_TEXTS.connect_to_room.format(room_name=room_name))
                 await bot.set_state(user.id, ButtonStorage.user_name, message.chat.id)
         else:
-            markup = await button_generator(user.id)
+            markup = await button_generator(message.from_user)
             await bot.send_message(message.chat.id, 'Хо-хо-хо! Вы вернулись!', reply_markup=markup)
 
 
@@ -370,7 +370,7 @@ async def get_info(message: Message):
         ):
             if any(args):
                 msg += line.format(*map(lambda x: '' if x is None else x, args)) + '\n'
-        markup = await button_generator(message.from_user.id)
+        markup = await button_generator(message.from_user)
         if msg:
             await bot.reply_to(message, msg, reply_markup=markup)
         else:
@@ -477,7 +477,7 @@ async def lock(message: Message):
     async with AsyncSession.begin() as session:
         q = await session.execute(req)
         room_id = q.scalar()
-    markup = await button_generator(message.from_user.id)
+    markup = await button_generator(message.from_user)
     if room_id is None:
         await bot.reply_to(message, 'Только создатель комнаты может её запереть.', reply_markup=markup)
     elif passkey is None:
@@ -544,7 +544,7 @@ async def set_max_price(message: Message):
     async with AsyncSession.begin() as session:
         q = await session.execute(req)
         name = q.scalar()
-    markup = await button_generator(message.from_user.id)
+    markup = await button_generator(message.from_user)
     if not name:
         await bot.reply_to(
             message,
