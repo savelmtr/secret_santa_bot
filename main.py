@@ -136,7 +136,6 @@ async def create_room_(message):
     room_name = message.text
     room_id = await create_room(room_name, message.from_user)
     await bot.reply_to(message, f'Вы создали комнату {room_name} c id {room_id}')
-    room, is_protected = await to_room_attach(room_id, message.from_user)
     bot_info = await bot.get_me()
     await bot.send_message(message.chat.id, CALLBACK_TEXTS.link.format(room_name=room_name,
                                                                        bot_name=bot_info.username,
@@ -164,7 +163,7 @@ async def callback_query(call):
 
 @bot.message_handler(state=ButtonStorage.create_password)
 async def create_password_(message: Message):
-    room_id = await lock(message)
+    await lock(message)
     markup = await button_generator(message.from_user)
     await bot.delete_state(message.from_user.id, message.chat.id)
     await bot.send_message(message.chat.id, 'Вы установили пароль для комнаты! \n'
@@ -176,7 +175,7 @@ async def connect_room_(message: Message):
     try:
         room_id = int(message.text)
     except ValueError:
-        await bot.reply_to(message, f'Не найдено комнаты c id:{room_id}! Попробуйте еще раз!')
+        await bot.reply_to(message, f'Не найдено комнаты c id:{message.text}! Попробуйте еще раз!')
         return
     room_name, is_protected = await to_room_attach(room_id, message.from_user)
     if not room_name:
