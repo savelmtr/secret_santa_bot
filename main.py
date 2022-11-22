@@ -378,6 +378,9 @@ async def get_user_name(message: Message):
         await bot.reply_to(message, 'Введите пожалуйста Имя и Фамилию в 2 слова 😀')
         await bot.set_state(message.from_user.id, ButtonStorage.user_name, message.chat.id)
     first_name, last_name = name_data
+    if not str(first_name).isalpha() or not str(last_name).isalpha():
+        await bot.reply_to(message, 'Введите пожалуйста Имя и Фамилию в 2 слова используя только буквы 😀')
+        await bot.set_state(message.from_user.id, ButtonStorage.user_name, message.chat.id)
     await set_user_name_data(first_name, last_name, message.from_user)
     price = await get_max_price(message.from_user.id)
     await bot.send_message(message.chat.id, CALLBACK_TEXTS.wish_message.format(max_price=price))
