@@ -28,7 +28,7 @@ async def get_user(user_payload: TelebotUser) -> Users:
         insert(Users)
         .values(
             id=user_payload.id,
-            username=user_payload.username if user_payload.username else user_payload.id,
+            username=user_payload.username if user_payload.username else '',
             first_name=user_payload.first_name if user_payload.first_name else '',
             last_name=user_payload.last_name if user_payload.last_name else ''
         )
@@ -66,8 +66,8 @@ async def create_room(name: str, user_payload: TelebotUser) -> int:
             )
         )
         await session.execute(up_req)
-        UserCache.clear()
-        return room_id
+    UserCache.clear()
+    return room_id
 
 
 async def to_room_attach(room_id: int, user_payload: TelebotUser) -> tuple[str | None, bool]:
