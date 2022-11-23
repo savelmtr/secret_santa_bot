@@ -16,7 +16,7 @@ from telebot.types import User as TelebotUser
 from callback_texts import CALLBACK_TEXTS
 from models import Pairs, Rooms, Users
 from viewmodel import (AsyncSession, UserCache, create_room, get_max_price, set_max_price,
-                       get_members, get_user, get_user_info, is_admin, lock,
+                       get_members, get_user, get_user_info, is_admin, lock, enlock,
                        is_paired, set_pairs, set_user_name_data, set_wishes,
                        to_room_attach)
 
@@ -196,7 +196,13 @@ async def connect_room_(message: Message):
 
 @bot.message_handler(state=ButtonStorage.enter_password)
 async def entering_to_room(message):
-    await enlock(message)
+    enlocked = await enlock(message.from_user, message.text)
+    if enlocked:
+        await bot.send_message(message.chat.id, 'Комната открыта 🔓', reply_markup=markup)
+        await bot.delete_state(message.from_user.id, message.chat.id)
+    else:
+        await bot.send_message(message.chat.id, 'Пароль не подходит 😞 Попробуйте еще раз')
+        await bot.set_state(message.from_user.id, ButtonStorage.enter_password, message.chat.id)
 
 
 @bot.message_handler(state=ButtonStorage.user_name)
@@ -454,45 +460,6 @@ async def rename_room(message: Message):
         await bot.reply_to(message, 'Вы не являетесь создателем комнаты, чтобы менять её название.')
     else:
         await bot.reply_to(message, f'Название комнаты с id:{res.id} изменено на {res.name}')
-
-
-@bot.message_handler(commands=['enlock'])
-async def enlock(message: Message):
-    payload = message.text
-    user = await get_user(message.from_user)
-    passkey_req = (
-        select(Rooms.passkey)
-        .filter(
-            Rooms.id == user.candidate_room_id
-        )
-    )
-    enlock_req = (
-        update(Users)
-        .where(Users.id == user.id)
-        .values(
-            candidate_room_id=None,
-            room_id=user.candidate_room_id
-        )
-    )
-    async with AsyncSession.begin() as session:
-        q = await session.execute(passkey_req)
-        passkey = q.scalar()
-    if passkey:
-        if payload == Encoder.decrypt(passkey.encode()).decode():
-            async with AsyncSession.begin() as session:
-                await session.execute(enlock_req)
-            UserCache.clear()
-            await bot.reply_to(message, 'Комната открыта.')
-            await bot.send_message(message.chat.id,
-                                   'Напиши свои Имя и Фамилию чтобы я внес тебя в список участников! 😇')
-            await bot.set_state(message.from_user.id, ButtonStorage.user_name, message.chat.id)
-        else:
-            await bot.reply_to(message, 'Пароль не подходит 😞'
-                                        'Попробуйте еще раз')
-            await bot.set_state(message.from_user.id, ButtonStorage.enter_password, message.chat.id)
-    else:
-        await bot.send_message(message.chat.id, 'Напиши свои Имя и Фамилию чтобы я внес тебя в список участников! 😇')
-        await bot.set_state(message.from_user.id, ButtonStorage.user_name, message.chat.id)
 
 
 if __name__ == '__main__':
