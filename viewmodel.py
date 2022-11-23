@@ -222,7 +222,7 @@ async def get_members(user_payload: TelebotUser):
     else:
         room_req = (
             select(
-                func.row_number.over().label('rnum'),
+                func.row_number().over().label('rnum'),
                 Users.username,
                 Users.first_name,
                 Users.last_name
