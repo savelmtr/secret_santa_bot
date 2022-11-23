@@ -235,7 +235,7 @@ async def get_members(user_payload: TelebotUser):
         async with AsyncSession.begin() as session:
             q = await session.execute(room_req)
             members = q.all()
-        m_str = '\n'.join([f'{m.rnum} @{m.username} {m.first_name} {m.last_name}' for m in members])
+        m_str = '\n'.join([f'{m.rnum}. @{m.username} {m.first_name} {m.last_name}' for m in members])
     return m_str
 
 
