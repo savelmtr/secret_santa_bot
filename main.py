@@ -17,7 +17,7 @@ from callback_texts import CALLBACK_TEXTS
 from models import Pairs, Rooms, Users
 from viewmodel import (AsyncSession, UserCache, create_room, get_max_price, set_max_price,
                        get_members, get_user, get_user_info, is_admin, lock, enlock,
-                       is_paired, set_pairs, set_user_name_data, set_wishes,
+                       is_paired, set_pairs, set_user_name_data, set_wishes, rename_room,
                        to_room_attach)
 
 
@@ -36,6 +36,7 @@ class ButtonStorage(StatesGroup):
     create_password = State()
     enter_password = State()
     max_price = State()
+    rename = State()
 
 
 bot = AsyncTeleBot(TOKEN, state_storage=StateMemoryStorage())
@@ -82,7 +83,7 @@ async def button_generator(user_payload: TelebotUser):
     if admin:
         markup.row(types.KeyboardButton('Сгенерировать пары 🎲'), types.KeyboardButton('Удалить всех участников ❌'))
         markup.row(types.KeyboardButton('Установить пароль 🔒'), types.KeyboardButton('Cбросить пароль 🔓'))
-        markup.row(types.KeyboardButton('Установить сумму подарков 💸'))
+        markup.row(types.KeyboardButton('Установить сумму подарков 💸'), types.KeyboardButton('Переименовать комнату 🪄'))
     return markup
 
 
@@ -329,8 +330,22 @@ async def button_text_handler(message):
                 await bot.set_state(message.from_user.id, ButtonStorage.max_price, message.chat.id)
             else:
                 await bot.send_message(message.chat.id, 'Упс! Вы не являетесь администратором комнаты, не шалите 😘')
+        case 'Переименовать комнату 🪄':
+            if admin:
+                await bot.send_message(message.chat.id, 'Введите новое название комнаты')
+                await bot.set_state(message.from_user.id, ButtonStorage.rename, message.chat.id)
+            else:
+                await bot.send_message(message.chat.id, 'Упс! Вы не являетесь администратором комнаты, не шалите 😘')
         case _:
             pass
+
+
+@bot.message_handler(state=ButtonStorage.rename)
+async def try_rename_room(message):
+    rename_msg = await rename_room(message.from_user, message.text)
+    markup = await button_generator(message.from_user)
+    await bot.delete_state(message.from_user.id, message.chat.id)
+    await bot.send_message(message.chat.id, rename_msg, reply_markup=markup)
 
 
 @bot.message_handler(commands=['info'])
