@@ -12,8 +12,10 @@ from telebot.types import User as TelebotUser
 
 from callback_texts import CALLBACK_TEXTS
 from models import Pairs, Rooms, Users
+from cryptography.fernet import Fernet
 
 
+Encoder = Fernet(os.getenv('SECRET').encode())
 UserCache = TTLCache(1024, 60)
 engine = create_async_engine(
     os.getenv('PG_URI_ASYNC'),
@@ -192,7 +194,7 @@ async def is_paired(user_payload: TelebotUser):
         .filter(
             Pairs.giver_id == user.id,
             Pairs.room_id == user.room_id
-    )
+        )
     )
     async with AsyncSession.begin() as session:
         q = await session.execute(req)
@@ -281,3 +283,31 @@ async def set_pairs(user_payload: TelebotUser) -> bool:
     async with AsyncSession.begin() as session:
         await session.execute(stmt)
     return True
+
+
+async def lock(user_payload: TelebotUser, text: str|None=None) -> str:
+    if not text:
+        passkey = None
+    else:
+        passkey = Encoder.encrypt(text.encode()).decode()
+    user = await get_user(user_payload)
+    req = (
+        update(Rooms)
+        .where(
+            Rooms.id == user.room_id,
+            Rooms.creator_id == user.id
+        )
+        .values(
+            passkey=passkey
+        )
+        .returning(Rooms.id)
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(req)
+        room_id = q.scalar()
+    if room_id is None:
+        return 'Только создатель комнаты может её запереть.'
+    elif passkey is None:
+        return 'Пароль комнаты сброшен.'
+    else:
+        return f'Пароль комнаты установлен. Пароль: {message.text}'
