@@ -399,22 +399,5 @@ async def get_info(message: Message):
             await bot.reply_to(message, "Бот пока с вами не знаком.", reply_markup=markup)
 
 
-@bot.message_handler(commands=['myrooms'])
-async def get_my_rooms(message: Message):
-    user = await get_user(message.from_user)
-    req = (
-        select(Rooms)
-        .filter(Rooms.creator_id == user.id)
-    )
-    async with AsyncSession.begin() as session:
-        q = await session.execute(req)
-        rooms = q.scalars().all()
-    if not rooms:
-        await bot.reply_to(message, 'Вы не являетесь владельцем ни одной комнаты.')
-    else:
-        msg = '\n'.join([f'{r.id} {r.name}' for r in rooms])
-        await bot.reply_to(message, msg)
-
-
 if __name__ == '__main__':
     asyncio.run(bot.polling())
