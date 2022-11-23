@@ -15,7 +15,7 @@ from telebot.types import User as TelebotUser
 
 from callback_texts import CALLBACK_TEXTS
 from models import Pairs, Rooms, Users
-from viewmodel import (AsyncSession, UserCache, create_room, get_max_price,
+from viewmodel import (AsyncSession, UserCache, create_room, get_max_price, set_max_price,
                        get_members, get_user, get_user_info, is_admin, lock,
                        is_paired, set_pairs, set_user_name_data, set_wishes,
                        to_room_attach)
@@ -230,8 +230,10 @@ async def get_user_wishes(message: Message):
 
 @bot.message_handler(state=ButtonStorage.max_price)
 async def enter_max_price(message):
-    await set_max_price(message)
+    price_message = await set_max_price(message.from_user, message.text)
+    markup = await button_generator(message.from_user)
     await bot.delete_state(message.from_user.id, message.chat.id)
+    await bot.send_message(message.chat.id, price_message, reply_markup=markup)
 
 
 @bot.message_handler(commands=['start'])
@@ -491,38 +493,6 @@ async def enlock(message: Message):
     else:
         await bot.send_message(message.chat.id, 'Напиши свои Имя и Фамилию чтобы я внес тебя в список участников! 😇')
         await bot.set_state(message.from_user.id, ButtonStorage.user_name, message.chat.id)
-
-
-async def set_max_price(message: Message):
-    payload = message.text
-    user = await get_user(message.from_user)
-    req = (
-        update(Rooms)
-        .where(
-            Rooms.id == user.room_id,
-            Rooms.creator_id == user.id
-        )
-        .values(
-            max_price=payload
-        )
-        .returning(
-            Rooms.name
-        )
-    )
-    async with AsyncSession.begin() as session:
-        q = await session.execute(req)
-        name = q.scalar()
-    markup = await button_generator(message.from_user)
-    if not name:
-        await bot.reply_to(
-            message,
-            f'Только создатель комнаты может устанавливать максимальную цену подарка в ней.', reply_markup=markup
-        )
-    elif payload:
-        await bot.reply_to(message, f'Установлена максимальная цена подарка для комнаты {name} ({payload} 💸).',
-                           reply_markup=markup)
-    else:
-        await bot.reply_to(message, f'Сброшена максимальная цена подарка для комнаты {name}.', reply_markup=markup)
 
 
 if __name__ == '__main__':
