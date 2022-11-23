@@ -390,7 +390,7 @@ async def rename_room(user_payload: TelebotUser, text: str='') -> str:
         return f'Название комнаты с id:{res.id} изменено на {res.name}'
 
     
-async def reset_members(user_payload: TelebotUser):
+async def reset_members(user_payload: TelebotUser) -> str:
     user = await get_user(user_payload)
     cte = (
         select(Rooms.id)
