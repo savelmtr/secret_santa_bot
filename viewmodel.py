@@ -3,7 +3,7 @@ import random
 
 from asyncache import cached
 from cachetools import TTLCache
-from sqlalchemy import and_, update
+from sqlalchemy import update, func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.future import select
@@ -221,7 +221,12 @@ async def get_members(user_payload: TelebotUser):
         m_str = 'Вы не подсоединены ни к одной комнате.'
     else:
         room_req = (
-            select(Users)
+            select(
+                func.row_number.over().label('rnum'),
+                Users.username,
+                Users.first_name,
+                Users.last_name
+            )
             .join(Rooms, Rooms.id == Users.room_id)
             .filter(
                 Rooms.id == user.room_id
@@ -229,8 +234,8 @@ async def get_members(user_payload: TelebotUser):
         )
         async with AsyncSession.begin() as session:
             q = await session.execute(room_req)
-            members = q.scalars().all()
-        m_str = '* ' + '\n* '.join([f'@{m.username} {m.first_name} {m.last_name}' for m in members])
+            members = q.all()
+        m_str = '\n'.join([f'{m.rnum} @{m.username} {m.first_name} {m.last_name}' for m in members])
     return m_str
 
 
@@ -419,8 +424,8 @@ async def reset_members(user_payload: TelebotUser) -> str:
         return 'Вы не являетесь создателем этой комнаты либо не состоите пока ни в одной.'
 
 
-async def get_my_rooms(message: Message):
-    user = await get_user(message.from_user)
+async def get_my_rooms(user_payload: TelebotUser) -> str:
+    user = await get_user(user_payload)
     req = (
         select(Rooms)
         .filter(Rooms.creator_id == user.id)
@@ -429,8 +434,8 @@ async def get_my_rooms(message: Message):
         q = await session.execute(req)
         rooms = q.scalars().all()
     if not rooms:
-        await bot.reply_to(message, 'Вы не являетесь владельцем ни одной комнаты.')
+        return 'Вы не являетесь владельцем ни одной комнаты.'
     else:
         msg = '\n'.join([f'{r.id} {r.name}' for r in rooms])
-        await bot.reply_to(message, msg)    
+        return msg
     
