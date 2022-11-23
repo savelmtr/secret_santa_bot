@@ -363,3 +363,28 @@ async def enlock(user_payload: TelebotUser, text: str='') -> bool:
         return True
     else:
         return False
+
+    
+async def rename_room(user_payload: TelebotUser, text: str='') -> str:
+    if not text:
+        return 'Вы не ввели нового названия комнаты.'
+    user = await get_user(user_payload)
+    req = (
+        update(Rooms)
+        .where(
+            Rooms.id == user.room_id,
+            Rooms.creator_id == user.id
+        )
+        .values(name=text)
+        .returning(
+            Rooms.id,
+            Rooms.name
+        )
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(req)
+        res = q.one_or_none()
+    if not res:
+        return 'Вы не являетесь создателем комнаты, чтобы менять её название.'
+    else:
+        return f'Название комнаты с id:{res.id} изменено на {res.name}'
