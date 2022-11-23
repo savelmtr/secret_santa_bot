@@ -417,3 +417,20 @@ async def reset_members(user_payload: TelebotUser) -> str:
         return 'Комната очищена от участников, остались одни вы.'
     else:
         return 'Вы не являетесь создателем этой комнаты либо не состоите пока ни в одной.'
+
+
+async def get_my_rooms(message: Message):
+    user = await get_user(message.from_user)
+    req = (
+        select(Rooms)
+        .filter(Rooms.creator_id == user.id)
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(req)
+        rooms = q.scalars().all()
+    if not rooms:
+        await bot.reply_to(message, 'Вы не являетесь владельцем ни одной комнаты.')
+    else:
+        msg = '\n'.join([f'{r.id} {r.name}' for r in rooms])
+        await bot.reply_to(message, msg)    
+    
