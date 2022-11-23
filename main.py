@@ -432,35 +432,5 @@ async def reset_members(message: Message):
         await bot.reply_to(message, 'Вы не являетесь создателем этой комнаты либо не состоите пока ни в одной.')
 
 
-@bot.message_handler(commands=['rename'])
-async def rename_room(message: Message):
-    payload = message.text[7:].strip()
-    if not payload:
-        await bot.reply_to(message, 'Вы не ввели нового названия комнаты.')
-        return
-    user = await get_user(message.from_user)
-    req = (
-        update(Rooms)
-        .where(
-            Rooms.id == user.room_id,
-            Rooms.creator_id == user.id
-        )
-        .values(
-            name=payload
-        )
-        .returning(
-            Rooms.id,
-            Rooms.name
-        )
-    )
-    async with AsyncSession.begin() as session:
-        q = await session.execute(req)
-        res = q.one_or_none()
-    if not res:
-        await bot.reply_to(message, 'Вы не являетесь создателем комнаты, чтобы менять её название.')
-    else:
-        await bot.reply_to(message, f'Название комнаты с id:{res.id} изменено на {res.name}')
-
-
 if __name__ == '__main__':
     asyncio.run(bot.polling())
