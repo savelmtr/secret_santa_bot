@@ -16,7 +16,7 @@ from telebot.types import User as TelebotUser
 from callback_texts import CALLBACK_TEXTS
 from models import Pairs, Rooms, Users
 from viewmodel import (AsyncSession, UserCache, create_room, get_max_price, set_max_price,
-                       get_members, get_user, get_user_info, is_admin, lock, enlock,
+                       get_members, get_user, get_user_info, is_admin, lock, enlock, reset_members,
                        is_paired, set_pairs, set_user_name_data, set_wishes, rename_room,
                        to_room_attach)
 
@@ -309,7 +309,8 @@ async def button_text_handler(message):
                 await bot.send_message(message.chat.id, 'Упс! Вы не являетесь администратором комнаты, не шалите 😘')
         case 'Удалить всех участников ❌':
             if admin:
-                await reset_members(message)
+                reset_txt = await reset_members(message.from_user)
+                await bot.send_message(message.chat.id, reset_txt)
             else:
                 await bot.send_message(message.chat.id, 'Упс! Вы не являетесь администратором комнаты, не шалите 😘')
         case 'Установить пароль 🔒':
@@ -413,38 +414,6 @@ async def get_my_rooms(message: Message):
     else:
         msg = '\n'.join([f'{r.id} {r.name}' for r in rooms])
         await bot.reply_to(message, msg)
-
-
-@bot.message_handler(commands=['reset'])
-async def reset_members(message: Message):
-    user = await get_user(message.from_user)
-    cte = (
-        select(Rooms.id)
-        .filter(
-            Rooms.id == user.room_id,
-            Rooms.creator_id == user.id
-        )
-        .cte('cte')
-    )
-    req = (
-        update(Users)
-        .where(
-            Users.room_id == select(cte.c.id).scalar_subquery(),
-            Users.id != user.id
-        )
-        .values(
-            room_id=None
-        )
-    )
-    UserCache.clear()
-    async with AsyncSession.begin() as session:
-        await session.execute(req)
-        q = await session.execute(select(cte.c.id))
-        room_name = q.scalar()
-    if room_name:
-        await bot.reply_to(message, 'Комната очищена от участников, остались одни вы.')
-    else:
-        await bot.reply_to(message, 'Вы не являетесь создателем этой комнаты либо не состоите пока ни в одной.')
 
 
 if __name__ == '__main__':
