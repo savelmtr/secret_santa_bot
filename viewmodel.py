@@ -388,3 +388,32 @@ async def rename_room(user_payload: TelebotUser, text: str='') -> str:
         return 'Вы не являетесь создателем комнаты, чтобы менять её название.'
     else:
         return f'Название комнаты с id:{res.id} изменено на {res.name}'
+
+    
+async def reset_members(user_payload: TelebotUser):
+    user = await get_user(user_payload)
+    cte = (
+        select(Rooms.id)
+        .filter(
+            Rooms.id == user.room_id,
+            Rooms.creator_id == user.id
+        )
+        .cte('cte')
+    )
+    req = (
+        update(Users)
+        .where(
+            Users.room_id == select(cte.c.id).scalar_subquery(),
+            Users.id != user.id
+        )
+        .values(room_id=None)
+    )
+    UserCache.clear()
+    async with AsyncSession.begin() as session:
+        await session.execute(req)
+        q = await session.execute(select(cte.c.id))
+        room_name = q.scalar()
+    if room_name:
+        return 'Комната очищена от участников, остались одни вы.'
+    else:
+        return 'Вы не являетесь создателем этой комнаты либо не состоите пока ни в одной.'
