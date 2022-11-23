@@ -311,3 +311,25 @@ async def lock(user_payload: TelebotUser, text: str|None=None) -> str:
         return 'Пароль комнаты сброшен.'
     else:
         return f'Пароль комнаты установлен. Пароль: {message.text}'
+
+    
+async def set_max_price(user_payload: TelebotUser, text: str='') -> str:
+    user = await get_user(user_payload)
+    req = (
+        update(Rooms)
+        .where(
+            Rooms.id == user.room_id,
+            Rooms.creator_id == user.id
+        )
+        .values(max_price=text)
+        .returning(Rooms.name)
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(req)
+        name = q.scalar()
+    if not name:
+        return f'Только создатель комнаты может устанавливать максимальную цену подарка в ней.'
+    elif payload:
+        return f'Установлена максимальная цена подарка для комнаты {name} ({text} 💸).'
+    else:
+        return f'Сброшена максимальная цена подарка для комнаты {name}.'
