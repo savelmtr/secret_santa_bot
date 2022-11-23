@@ -333,3 +333,33 @@ async def set_max_price(user_payload: TelebotUser, text: str='') -> str:
         return f'Установлена максимальная цена подарка для комнаты {name} ({text} 💸).'
     else:
         return f'Сброшена максимальная цена подарка для комнаты {name}.'
+
+    
+async def enlock(user_payload: TelebotUser, text: str='') -> bool:
+    payload = message.text
+    user = await get_user(message.from_user)
+    passkey_req = (
+        select(Rooms.passkey)
+        .filter(
+            Rooms.id == user.candidate_room_id
+        )
+    )
+    enlock_req = (
+        update(Users)
+        .where(Users.id == user.id)
+        .values(
+            candidate_room_id=None,
+            room_id=user.candidate_room_id
+        )
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(passkey_req)
+        passkey = q.scalar()
+
+    if payload == Encoder.decrypt(passkey.encode()).decode():
+        async with AsyncSession.begin() as session:
+            await session.execute(enlock_req)
+        UserCache.clear()
+        return True
+    else:
+        return False
