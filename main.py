@@ -16,7 +16,7 @@ from telebot.types import User as TelebotUser
 from callback_texts import CALLBACK_TEXTS
 from models import Pairs, Rooms, Users
 from viewmodel import (AsyncSession, UserCache, create_room, get_max_price,
-                       get_members, get_user, get_user_info, is_admin,
+                       get_members, get_user, get_user_info, is_admin, lock,
                        is_paired, set_pairs, set_user_name_data, set_wishes,
                        to_room_attach)
 
@@ -163,11 +163,10 @@ async def callback_query(call):
 
 @bot.message_handler(state=ButtonStorage.create_password)
 async def create_password_(message: Message):
-    await lock(message)
+    lock_msg = await lock(message.from_user, message.text)
     markup = await button_generator(message.from_user)
     await bot.delete_state(message.from_user.id, message.chat.id)
-    await bot.send_message(message.chat.id, 'Вы установили пароль для комнаты! \n'
-                                            f'Пароль: {message.text}', reply_markup=markup)
+    await bot.send_message(message.chat.id, lock_msg, reply_markup=markup)
 
 
 @bot.message_handler(state=ButtonStorage.connect_room)
@@ -312,8 +311,8 @@ async def button_text_handler(message):
                 await bot.send_message(message.chat.id, 'Упс! Вы не являетесь администратором комнаты, не шалите 😘')
         case 'Cбросить пароль 🔓':
             if admin:
-                message.text = None
-                await lock(message)
+                lock_msg = await lock(message.from_user)
+                await bot.send_message(message.chat.id, lock_msg, reply_markup=markup)
             else:
                 await bot.send_message(message.chat.id, 'Упс! Вы не являетесь администратором комнаты, не шалите 😘')
         case 'Установить сумму подарков 💸':
@@ -453,36 +452,6 @@ async def rename_room(message: Message):
         await bot.reply_to(message, 'Вы не являетесь создателем комнаты, чтобы менять её название.')
     else:
         await bot.reply_to(message, f'Название комнаты с id:{res.id} изменено на {res.name}')
-
-
-async def lock(message: Message):
-    payload = message.text
-    if not payload:
-        passkey = None
-    else:
-        passkey = Encoder.encrypt(payload.encode()).decode()
-    user = await get_user(message.from_user)
-    req = (
-        update(Rooms)
-        .where(
-            Rooms.id == user.room_id,
-            Rooms.creator_id == user.id
-        )
-        .values(
-            passkey=passkey
-        )
-        .returning(Rooms.id)
-    )
-    async with AsyncSession.begin() as session:
-        q = await session.execute(req)
-        room_id = q.scalar()
-    markup = await button_generator(message.from_user)
-    if room_id is None:
-        await bot.reply_to(message, 'Только создатель комнаты может её запереть.', reply_markup=markup)
-    elif passkey is None:
-        await bot.reply_to(message, 'Пароль комнаты сброшен.', reply_markup=markup)
-    else:
-        await bot.reply_to(message, 'Пароль комнаты установлен.', reply_markup=markup)
 
 
 @bot.message_handler(commands=['enlock'])
