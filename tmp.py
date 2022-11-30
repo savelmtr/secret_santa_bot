@@ -42,21 +42,31 @@ class CustomBot(AsyncTeleBot):
         self.button_sets.append(button_set(self))
 
 
-    def get_available_buttonset(self):
+    def get_available_buttonset(self, chat_id: int | str):
         available_bs = [
-            bs for bs in self.button_sets if bs.is_available(message)
+            bs for bs in self.button_sets if bs.is_available(chat_id)
         ]
         return available_bs[0] if available_bs else None
 
-
-    async def markup_message(
-        self,
-        message: Message,
-        text:str,
-        reply_markup: None| REPLY_MARKUP_TYPES = None
-    ):
-        reply_markup = kwargs.get('reply_markup', self.get_available_buttonset())
-        self.send_message(message.chat.id, text, reply_markup=reply_markup)
+    async def send_message(
+            self, chat_id: int | str, text: str, 
+            parse_mode:  None | str=None, 
+            entities:  None|list[types.MessageEntity]=None,
+            disable_web_page_preview:  None|bool=None, 
+            disable_notification:  None|bool=None, 
+            protect_content:  None|bool=None,
+            reply_to_message_id:  None|int=None, 
+            allow_sending_without_reply:  None|bool=None,
+            reply_markup:  None|REPLY_MARKUP_TYPES=None,
+            timeout:  None|int=None,
+            message_thread_id:  None|int=None) -> types.Message:
+        reply_markup = reply_markup or self.get_available_buttonset(chat_id)
+        super().send_message(
+            chat_id, text, parse_mode,entities, disable_web_page_preview,
+            disable_notification, protect_content, reply_to_message_id,
+            allow_sending_without_reply, reply_markup,
+            timeout, message_thread_id
+        )
 
 
 tbot = CustomBot(TOKEN, state_storage=StateMemoryStorage())
