@@ -1,4 +1,4 @@
-from telebot.types import Message, KeyboardButton, ReplyKeyboardMarkup, MessageEntity, Message
+from telebot.types import Message, KeyboardButton, ReplyKeyboardMarkup, MessageEntity
 from abc import ABC, abstractmethod
 from telebot.async_telebot import AsyncTeleBot, REPLY_MARKUP_TYPES
 
