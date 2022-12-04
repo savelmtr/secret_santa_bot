@@ -84,7 +84,4 @@ class CustomBot(AsyncTeleBot):
         )
 
     def add_message_handler(self, handler_dict: dict):
-        if self.message_handlers:
-            self.message_handlers.insert(-1, handler_dict)
-        else:
-            self.message_handlers.append(handler_dict)
+        self.message_handlers.insert(-1, handler_dict)
