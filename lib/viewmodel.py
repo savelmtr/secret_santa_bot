@@ -3,14 +3,14 @@ import random
 
 from asyncache import cached
 from cachetools import TTLCache
-from sqlalchemy import update, func
+from sqlalchemy import update, func, and_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.future import select
 from sqlalchemy.orm import aliased
 from telebot.types import User as TelebotUser
 
-from callback_texts import CALLBACK_TEXTS
+from lib.callback_texts import CALLBACK_TEXTS
 from models import Pairs, Rooms, Users
 from cryptography.fernet import Fernet
 
@@ -158,13 +158,13 @@ async def get_user_info(user_payload: TelebotUser, status='connect'):
         return msg
 
 
-async def is_admin(user_payload: TelebotUser):
-    user = await get_user(user_payload)
+async def is_attached(chat_id: int, is_admin: bool=False) -> bool:
+    cond = Users.id == Rooms.creator_id if is_admin else Users.id != Rooms.creator_id
     req = (
         select(Rooms.id)
+        .join(Users, and_(Users.room_id == Rooms.id, cond))
         .filter(
-            Rooms.creator_id == user.id,
-            Rooms.id == user.room_id
+            Users.id == chat_id
         )
     )
     async with AsyncSession.begin() as session:
@@ -315,7 +315,7 @@ async def lock(user_payload: TelebotUser, text: str|None=None) -> str:
     elif passkey is None:
         return 'Пароль комнаты сброшен.'
     else:
-        return f'Пароль комнаты установлен. Пароль: {message.text}'
+        return f'Пароль комнаты установлен. Пароль: {text}'
 
     
 async def set_max_price(user_payload: TelebotUser, text: str='') -> str:
@@ -334,15 +334,14 @@ async def set_max_price(user_payload: TelebotUser, text: str='') -> str:
         name = q.scalar()
     if not name:
         return f'Только создатель комнаты может устанавливать максимальную цену подарка в ней.'
-    elif payload:
+    elif text:
         return f'Установлена максимальная цена подарка для комнаты {name} ({text} 💸).'
     else:
         return f'Сброшена максимальная цена подарка для комнаты {name}.'
 
     
 async def enlock(user_payload: TelebotUser, text: str='') -> bool:
-    payload = message.text
-    user = await get_user(message.from_user)
+    user = await get_user(user_payload)
     passkey_req = (
         select(Rooms.passkey)
         .filter(
@@ -361,7 +360,7 @@ async def enlock(user_payload: TelebotUser, text: str='') -> bool:
         q = await session.execute(passkey_req)
         passkey = q.scalar()
 
-    if payload == Encoder.decrypt(passkey.encode()).decode():
+    if text == Encoder.decrypt(passkey.encode()).decode():
         async with AsyncSession.begin() as session:
             await session.execute(enlock_req)
         UserCache.clear()
@@ -439,3 +438,47 @@ async def get_my_rooms(user_payload: TelebotUser) -> str:
         msg = '\n'.join([f'{r.id} {r.name}' for r in rooms])
         return msg
     
+
+async def get_info(user_payload: TelebotUser, bot):
+    user = await get_user(user_payload)
+    giver = aliased(Users)
+    taker = aliased(Users)
+    candidate = aliased(Rooms)
+    rooms = aliased(Rooms)
+    req = (
+        select(
+            rooms.name.label('room'),
+            rooms.id.label('room_id'),
+            rooms.max_price,
+            candidate.name.label('candidate'),
+            candidate.id.label('candidate_id'),
+            giver.wish_string.label('my_wishes'),
+            taker.first_name,
+            taker.last_name,
+            taker.username,
+            taker.wish_string
+        )
+        .join(rooms, rooms.id == giver.room_id, isouter=True)
+        .join(candidate, candidate.id == giver.candidate_room_id, isouter=True)
+        .join(Pairs, and_(Pairs.giver_id == giver.id, Pairs.room_id == rooms.id), isouter=True)
+        .join(taker, taker.id == Pairs.taker_id, isouter=True)
+        .filter(
+            giver.id == user.id
+        )
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(req)
+        data = q.one_or_none()
+        msg = ''
+        for line, args in (
+                ('Вы подсоединены к комнате {}.', (data.room,)),
+                ('Максимальная цена подарка: {}', (data.max_price,)),
+                ('Вы собираетесь присоединиться к комнате {}, но пока не ввели пароль.', (data.candidate,)),
+                (f'Ссылка на бота: https://t.me/{(await bot.get_me()).username}/?start={{}}', (data.room_id,)),
+                ('Ваши пожелания: {}.', (data.my_wishes,)),
+                ('Вы дарите подарок: @{} {} {}.', (data.username, data.first_name, data.last_name)),
+                ('Пожелания одариваемого: {}.', (data.wish_string,))
+        ):
+            if any(args):
+                msg += line.format(*map(lambda x: '' if x is None else x, args)) + '\n'
+    return msg

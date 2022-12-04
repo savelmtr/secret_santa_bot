@@ -1,31 +1,20 @@
-from abc import ABC, abstractmethod
-from telebot.types import Message, KeyboardButton, ReplyKeyboardMarkup
-from telebot.async_telebot import AsyncTeleBot
-from viewmodel import (create_room, get_max_price, set_max_price,
-                       get_members, get_user, get_user_info, is_admin, lock, enlock, reset_members,
-                       is_paired, set_pairs, set_user_name_data, set_wishes, rename_room,
-                       to_room_attach)
-
-
-class AbstractButton(ABC, KeyboardButton):
-    name: str
-
-    def __init__(self, bot: AsyncTeleBot):
-        super(KeyboardButton).__init__(self.name)
-        self.bot = bot
-
-    @abstractmethod
-    async def run(self, message: Message):
-        pass
+from telebot.types import Message
+from lib.viewmodel import (get_info, is_attached,
+                       get_members, get_user_info, lock, reset_members,
+                       is_paired, set_pairs)
+from typing import Callable
+from lib.states import States
+from lib.base import AbstractButton, AbstractButtonSet
 
 
 def check_if_admin(method: Callable):
     async def wrapped(self, message: Message):
-        admin = await is_admin(message.from_user)
+        admin = await is_attached(message.chat.id, True)
         if admin:
-            await method(self, message)
+            return await method(self, message)
         else:
             await self.bot.send_message(message.chat.id, 'Упс! Вы не являетесь администратором комнаты, не шалите 😘')
+    return wrapped
 
 
 class GetTeamMates(AbstractButton):
@@ -42,10 +31,10 @@ class GetMyData(AbstractButton):
     async def run(self, message: Message):
         paired = await is_paired(message.from_user)
         if paired:
-            await get_info(message)
+            msg = await get_info(message.from_user, self.bot)
         else:
             msg = await get_user_info(message.from_user, status='info')
-            await self.bot.send_message(message.chat.id, msg)
+        await self.bot.send_message(message.chat.id, msg)
 
 
 class ChangeMyName(AbstractButton):
@@ -53,7 +42,7 @@ class ChangeMyName(AbstractButton):
 
     async def run(self, message: Message):
         await self.bot.send_message(message.chat.id, 'Введите Ваши имя и фамилию и Санта исправит их 🎅 ✍')
-        await self.bot.set_state(message.from_user.id, ButtonStorage.update_name, message.chat.id)
+        await self.bot.set_state(message.from_user.id, States.update_name, message.chat.id)
 
 
 class ChangeWishes(AbstractButton):
@@ -61,7 +50,7 @@ class ChangeWishes(AbstractButton):
 
     async def run(self, message: Message):
         await self.bot.send_message(message.chat.id, 'Введите Ваши пожелания и Санта исправит их 🎅 🎀')
-        await self.bot.set_state(message.from_user.id, ButtonStorage.update_wishes, message.chat.id)
+        await self.bot.set_state(message.from_user.id, States.update_wishes, message.chat.id)
 
 
 class GeneratePairs(AbstractButton):
@@ -91,7 +80,7 @@ class SetPassword(AbstractButton):
     @check_if_admin
     async def run(self, message: Message):
         await self.bot.send_message(message.chat.id, 'Введите пожалуйста пароль')
-        await self.bot.set_state(message.from_user.id, ButtonStorage.create_password, message.chat.id)
+        await self.bot.set_state(message.from_user.id, States.create_password, message.chat.id)
 
 
 class DeletePassword(AbstractButton):
@@ -109,7 +98,7 @@ class SetMaxPrice(AbstractButton):
     @check_if_admin
     async def run(self, message: Message):
         await self.bot.send_message(message.chat.id, 'Введите максимальную цену подарка')
-        await self.bot.set_state(message.from_user.id, ButtonStorage.max_price, message.chat.id)
+        await self.bot.set_state(message.from_user.id, States.max_price, message.chat.id)
 
 
 class RenameRoom(AbstractButton):
@@ -118,21 +107,7 @@ class RenameRoom(AbstractButton):
     @check_if_admin
     async def run(self, message: Message):
         await self.bot.send_message(message.chat.id, 'Введите новое название комнаты')
-        await self.bot.set_state(message.from_user.id, ButtonStorage.rename, message.chat.id)
-
-
-class AbstractButtonSet(ABC, ReplyKeyboardMarkup):
-    resize_keyboard: bool = True
-    buttons: tuple[tuple[AbstractButton]]
-
-    def __init__(self, bot: AsyncTeleBot):
-        super(ReplyKeyboardMarkup).__init__(resize_keyboard=self.resize_keyboard)
-        for row in self.buttons:
-            self.row(*[b(bot) for b in row])
-
-    @abstractmethod
-    async def is_available(self, message: Message):
-        pass
+        await self.bot.set_state(message.from_user.id, States.rename, message.chat.id)
 
 
 class UserButtonSet(AbstractButtonSet):
@@ -141,8 +116,8 @@ class UserButtonSet(AbstractButtonSet):
         (ChangeMyName, ChangeWishes)
     )
 
-    async def is_available(self, message: Message):
-        return not await is_admin(message.from_user)
+    async def is_available(self, chat_id: int | str):
+        return await is_attached(chat_id)
 
 
 class AdminButtonSet(AbstractButtonSet):
@@ -154,5 +129,5 @@ class AdminButtonSet(AbstractButtonSet):
         (SetMaxPrice, RenameRoom)
     )
 
-    async def is_available(self, message: Message):
-        return await is_admin(message.from_user)
+    async def is_available(self, chat_id: int | str):
+        return await is_attached(chat_id, True)
