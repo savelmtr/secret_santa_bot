@@ -84,12 +84,7 @@ class CustomBot(AsyncTeleBot):
         )
 
     def add_message_handler(self, handler_dict: dict):
-        self.message_handlers.append(handler_dict)
-        idx = [
-            i for i, h in enumerate(self.message_handlers)
-            if len(h['filters'])==1 and h['filters'].get('content_types', False) == ['text']
-        ]
-        if idx and len(self.message_handlers) > 1:
-            idx = idx[0]
-            self.message_handlers = \
-                self.message_handlers[:idx] + self.message_handlers[idx+1:] + [self.message_handlers[idx]]
+        if self.message_handlers:
+            self.message_handlers = self.message_handlers[:-1] + [handler_dict] + [self.message_handlers[-1]]
+        else:
+            self.message_handlers.append(handler_dict)
