@@ -1,5 +1,5 @@
 from telebot.types import Message
-from lib.viewmodel import (get_info, is_attached,
+from lib.viewmodel import (get_info, is_attached, get_pairs,
                        get_members, get_user_info, lock, reset_members,
                        is_paired, set_pairs)
 from typing import Callable
@@ -61,6 +61,8 @@ class GeneratePairs(AbstractButton):
         pairs_set = await set_pairs(message.from_user)
         if pairs_set:
             await self.bot.send_message(message.chat.id, 'Пары сгенерированы 🎀')
+            for mem_id, username, first_n, last_n, wishes in await get_pairs(message.from_user):
+                await self.bot.send_message(mem_id, f'Ваша пара: @{username} {first_n} {last_n}. Пожелания: {wishes}')
         else:
             await self.bot.send_message(message.chat.id, 'Вы один-одинёшенек в комнате 😧')
 

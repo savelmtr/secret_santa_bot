@@ -482,3 +482,26 @@ async def get_info(user_payload: TelebotUser, bot):
             if any(args):
                 msg += line.format(*map(lambda x: '' if x is None else x, args)) + '\n'
     return msg
+
+
+async def get_pairs(user_payload: TelebotUser):
+    giver = aliased(Users)
+    taker = aliased(Users)
+    req = (
+        select(
+            taker.id,
+            giver.username,
+            giver.first_name,
+            giver.last_name,
+            giver.wish_string
+        )
+        .select_from(Users)
+        .join(Pairs, Users.room_id == Pairs.room_id)
+        .join(giver, giver.id == Pairs.giver_id)
+        .join(taker, taker.id == Pairs.taker_id)
+        .filter(Users.id == user_payload.id)
+    )
+    async with AsyncSession.begin() as session:
+        q = await session.execute(req)
+        data = q.all()
+    return data
