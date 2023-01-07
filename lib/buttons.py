@@ -1,7 +1,7 @@
 from telebot.types import Message
-from lib.viewmodel import (get_info, is_attached, get_pairs,
+from lib.viewmodel import (is_attached, get_pairs,
                        get_members, get_user_info, lock, reset_members,
-                       is_paired, set_pairs)
+                       set_pairs)
 from typing import Callable
 from lib.states import States
 from lib.base import AbstractButton, AbstractButtonSet
@@ -29,11 +29,7 @@ class GetMyData(AbstractButton):
     name = 'Мои данные 📋'
 
     async def run(self, message: Message):
-        paired = await is_paired(message.from_user)
-        if paired:
-            msg = await get_info(message.from_user, self.bot)
-        else:
-            msg = await get_user_info(message.from_user, status='info')
+        msg = await get_user_info(message.from_user, status='info')
         await self.bot.send_message(message.chat.id, msg)
 
 
@@ -41,7 +37,10 @@ class ChangeMyName(AbstractButton):
     name = 'Изменить имя ✍'
 
     async def run(self, message: Message):
-        await self.bot.send_message(message.chat.id, 'Введите Ваши имя и фамилию и Санта исправит их 🎅 ✍')
+        await self.bot.send_message(
+            message.chat.id,
+            'Напишите как вас зовут, чтобы ваши друзья знали, кому они дарят подарок 🎅 ✍'
+        )
         await self.bot.set_state(message.from_user.id, States.update_name, message.chat.id)
 
 
@@ -49,7 +48,7 @@ class ChangeWishes(AbstractButton):
     name = 'Изменить пожелания 🎀'
 
     async def run(self, message: Message):
-        await self.bot.send_message(message.chat.id, 'Введите Ваши пожелания и Санта исправит их 🎅 🎀')
+        await self.bot.send_message(message.chat.id, 'Введите ваши пожелания 🎅 🎀')
         await self.bot.set_state(message.from_user.id, States.update_wishes, message.chat.id)
 
 

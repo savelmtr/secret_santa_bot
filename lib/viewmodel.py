@@ -13,6 +13,7 @@ from telebot.types import User as TelebotUser
 from lib.callback_texts import CALLBACK_TEXTS
 from models import Pairs, Rooms, Users
 from cryptography.fernet import Fernet
+from typing import Literal
 
 
 Encoder = Fernet(os.getenv('SECRET').encode())
@@ -112,19 +113,27 @@ async def set_user_name_data(name, surname, user_payload: TelebotUser) -> None:
     UserCache.clear()
 
 
-async def get_user_info(user_payload: TelebotUser, status='connect'):
+async def get_user_info(user_payload: TelebotUser, status: Literal['connect', 'update', 'info']='connect'):
     user = await get_user(user_payload)
     giver = aliased(Users)
+    taker = aliased(Users)
     req = (
         select(
             Rooms.name.label('room'),
             Rooms.id.label('room_id'),
+            Rooms.max_price,
             giver.first_name,
             giver.last_name,
             giver.username,
             giver.wish_string.label('my_wishes'),
+            taker.first_name.label('taker_first_name'),
+            taker.last_name.label('taker_last_name'),
+            taker.username.label('taker_username'),
+            taker.wish_string
         )
-        .join(Rooms, Rooms.id == giver.room_id, isouter=True)
+        .join(Rooms, Rooms.id == giver.room_id)
+        .join(Pairs, and_(Pairs.giver_id == giver.id, Pairs.room_id == Rooms.id), isouter=True)
+        .join(taker, taker.id == Pairs.taker_id, isouter=True)
         .filter(
             giver.id == user.id
         )
@@ -132,30 +141,39 @@ async def get_user_info(user_payload: TelebotUser, status='connect'):
     async with AsyncSession.begin() as session:
         q = await session.execute(req)
         data = q.one_or_none()
-        if status == 'connect':
-            msg = CALLBACK_TEXTS.congratulations.format(
-                room=data.room,
-                my_wishes=data.my_wishes,
-                username=data.username,
-                first_name=data.first_name,
-                last_name=data.last_name
-            )
-        elif status == 'update':
-            msg = CALLBACK_TEXTS.update.format(
-                my_wishes=data.my_wishes,
-                    username=data.username,
-                    first_name=data.first_name,
-                    last_name=data.last_name
-                )
-        else:
-            msg = CALLBACK_TEXTS.info.format(
-                room=data.room,
-                my_wishes=data.my_wishes,
-                username=data.username,
-                first_name=data.first_name,
-                last_name=data.last_name
-            )
-        return msg
+        if data is None:
+            return 'Ошибка базы данных при попытке получить информацию о пользователе.'
+    match status:
+        case 'connect':
+            msg = CALLBACK_TEXTS.info_congrats.format(room=data.room)
+        case 'update':
+            msg = CALLBACK_TEXTS.info_update
+            msg += CALLBACK_TEXTS.info_in_room.format(room=data.room)
+        case 'info':
+            msg = CALLBACK_TEXTS.info_in_room.format(room=data.room)
+        case _:
+            return ''
+    
+    for kwargs, callback_text in (
+        ({'my_wishes': data.my_wishes}, CALLBACK_TEXTS.info_wishes),
+        (
+            {'username': data.username, 'first_name': data.first_name, 'last_name':data.last_name},
+            CALLBACK_TEXTS.info_name
+        ),
+        (
+            {
+                'taker_username': data.taker_username,
+                'taker_first_name': data.taker_first_name,
+                'taker_last_name':data.taker_last_name
+            },
+            CALLBACK_TEXTS.info_taker
+        ),
+        ({'taker_wishes': data.wish_string}, CALLBACK_TEXTS.info_taker_wishes),
+        ({'max_price': data.max_price}, CALLBACK_TEXTS.info_max_price),
+    ):
+        if any(kwargs.values()):
+            msg += callback_text.format(**kwargs)
+    return msg
 
 
 async def is_attached(chat_id: int, is_admin: bool=False) -> bool:
@@ -171,35 +189,6 @@ async def is_attached(chat_id: int, is_admin: bool=False) -> bool:
         q = await session.execute(req)
         result = q.scalar()
         return True if result else False
-
-
-async def get_max_price(user_id: int):
-    req = (
-        select(Rooms.max_price)
-        .join(Users, Rooms.id == Users.room_id)
-        .filter(Users.id == user_id)
-    )
-    async with AsyncSession.begin() as session:
-        q = await session.execute(req)
-        price = q.scalar()
-        if not price:
-            return 'любая'
-        return price
-
-
-async def is_paired(user_payload: TelebotUser):
-    user = await get_user(user_payload)
-    req = (
-        select(Pairs.giver_id)
-        .filter(
-            Pairs.giver_id == user.id,
-            Pairs.room_id == user.room_id
-        )
-    )
-    async with AsyncSession.begin() as session:
-        q = await session.execute(req)
-        res = q.scalar()
-    return True if res else False
 
 
 async def set_wishes(user_id: int, wishes: str):
@@ -438,51 +427,6 @@ async def get_my_rooms(user_payload: TelebotUser) -> str:
         msg = '\n'.join([f'{r.id} {r.name}' for r in rooms])
         return msg
     
-
-async def get_info(user_payload: TelebotUser, bot):
-    user = await get_user(user_payload)
-    giver = aliased(Users)
-    taker = aliased(Users)
-    candidate = aliased(Rooms)
-    rooms = aliased(Rooms)
-    req = (
-        select(
-            rooms.name.label('room'),
-            rooms.id.label('room_id'),
-            rooms.max_price,
-            candidate.name.label('candidate'),
-            candidate.id.label('candidate_id'),
-            giver.wish_string.label('my_wishes'),
-            taker.first_name,
-            taker.last_name,
-            taker.username,
-            taker.wish_string
-        )
-        .join(rooms, rooms.id == giver.room_id, isouter=True)
-        .join(candidate, candidate.id == giver.candidate_room_id, isouter=True)
-        .join(Pairs, and_(Pairs.giver_id == giver.id, Pairs.room_id == rooms.id), isouter=True)
-        .join(taker, taker.id == Pairs.taker_id, isouter=True)
-        .filter(
-            giver.id == user.id
-        )
-    )
-    async with AsyncSession.begin() as session:
-        q = await session.execute(req)
-        data = q.one_or_none()
-        msg = ''
-        for line, args in (
-                ('Вы подсоединены к комнате {}.', (data.room,)),
-                ('Максимальная цена подарка: {}', (data.max_price,)),
-                ('Вы собираетесь присоединиться к комнате {}, но пока не ввели пароль.', (data.candidate,)),
-                (f'Ссылка на бота: https://t.me/{(await bot.get_me()).username}/?start={{}}', (data.room_id,)),
-                ('Ваши пожелания: {}.', (data.my_wishes,)),
-                ('Вы дарите подарок: @{} {} {}.', (data.username, data.first_name, data.last_name)),
-                ('Пожелания одариваемого: {}.', (data.wish_string,))
-        ):
-            if any(args):
-                msg += line.format(*map(lambda x: '' if x is None else x, args)) + '\n'
-    return msg
-
 
 async def get_pairs(user_payload: TelebotUser):
     giver = aliased(Users)
