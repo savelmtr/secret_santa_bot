@@ -11,6 +11,11 @@ services:
       init:
         condition: service_completed_successfully
     restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
   init:
     build: .
     command: alembic upgrade head

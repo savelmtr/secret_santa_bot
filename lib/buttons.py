@@ -98,7 +98,7 @@ class SetMaxPrice(AbstractButton):
 
     @check_if_admin
     async def run(self, message: Message):
-        await self.bot.send_message(message.chat.id, 'Введите максимальную цену подарка')
+        await self.bot.send_message(message.chat.id, 'Введите минимальную цену подарка')
         await self.bot.set_state(message.from_user.id, States.max_price, message.chat.id)
 
 

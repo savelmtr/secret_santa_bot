@@ -43,8 +43,8 @@ class CALLBACK_TEXTS:
     info_name = 'В комнате ты представлен как: @{username} ({first_name} {last_name})\n'
     info_taker = 'Вы дарите подарок: @{taker_username} ({taker_first_name} {taker_last_name})\n'
     info_taker_wishes = 'Пожелания одариваемого: {taker_wishes} 🎁\n'
-    info_max_price = 'Максимальная цена подарка: {max_price}\n'
-    
+    info_max_price = 'Минимальная цена подарка: {max_price}\n'
+
     room_id_not_found = 'Не найдено комнаты c id:{room_id}! Попробуйте еще раз!'
     successfully_created_room = '''Вы успешно создали комнату {room_name}!
 Ваши данные:
