@@ -433,11 +433,11 @@ async def get_pairs(user_payload: TelebotUser):
     taker = aliased(Users)
     req = (
         select(
-            taker.id,
-            giver.username,
-            giver.first_name,
-            giver.last_name,
-            giver.wish_string
+            giver.id,
+            taker.username,
+            taker.first_name,
+            taker.last_name,
+            taker.wish_string
         )
         .select_from(Users)
         .join(Pairs, Users.room_id == Pairs.room_id)
