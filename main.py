@@ -6,15 +6,22 @@ from telebot.asyncio_storage import StateMemoryStorage
 
 from lib.base import CustomBot
 from lib.buttons import AdminButtonSet, UserButtonSet
-from lib.handlers import (callback_query, connect_room,
-                          create_password_handler, create_room_handler,
-                          enter_max_price, entering_to_room, get_room,
-                          try_rename_room,
-                          update_name, update_wishes)
+from lib.handlers import (
+    callback_query,
+    connect_room,
+    create_password_handler,
+    create_room_handler,
+    enter_max_price,
+    entering_to_room,
+    get_room,
+    try_rename_room,
+    update_name,
+    update_wishes,
+)
 from lib.states import States
 
 
-TOKEN = os.getenv('TOKEN')
+TOKEN = os.getenv("TOKEN")
 
 bot = CustomBot(TOKEN, state_storage=StateMemoryStorage())
 bot.add_button_set(AdminButtonSet)
@@ -26,15 +33,22 @@ bot.message_handler(state=States.update_name)(update_name)
 bot.message_handler(state=States.update_wishes)(update_wishes)
 bot.message_handler(state=States.create_room)(create_room_handler)
 bot.callback_query_handler(
-    func=lambda call: call.data in ('change_name', 'set_wishes', 'create_room', 'connect_room')
+    func=lambda call: call.data
+    in ("change_name", "set_wishes", "create_room", "connect_room")
 )(callback_query)
 bot.message_handler(state=States.create_password)(create_password_handler)
 bot.message_handler(state=States.connect_room)(connect_room)
 bot.message_handler(state=States.enter_password)(entering_to_room)
 bot.message_handler(state=States.max_price)(enter_max_price)
-bot.message_handler(commands=['start'])(get_room)
+bot.message_handler(commands=["start"])(get_room)
 bot.message_handler(state=States.rename)(try_rename_room)
 
 
-if __name__ == '__main__':
-    asyncio.run(bot.polling())
+if __name__ == "__main__":
+    print(bot.message_handlers)
+    try:
+        asyncio.run(bot.polling())
+    except Exception:
+        import traceback
+
+        traceback.print_exc()
