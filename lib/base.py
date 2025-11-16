@@ -38,7 +38,6 @@ class CustomBot(AsyncTeleBot):
 
     def __init__(self, *args, **kwargs):
         async def process_button_press(message: Message):
-            print("Нажата кнопка", message)
             btnset = await self.get_available_buttonset(message.chat.id)
             if not btnset:
                 return
@@ -75,7 +74,6 @@ class CustomBot(AsyncTeleBot):
         *args,
         **kwargs
     ) -> Message:
-        print("sending", chat_id, text)
         reply_markup = reply_markup or await self.get_available_buttonset(chat_id)
         await super().send_message(
             chat_id,
@@ -93,5 +91,4 @@ class CustomBot(AsyncTeleBot):
         )
 
     def add_message_handler(self, handler_dict: dict):
-        print("add_message_handler", handler_dict)
         self.message_handlers.insert(-1, handler_dict)

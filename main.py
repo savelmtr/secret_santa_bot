@@ -45,10 +45,4 @@ bot.message_handler(state=States.rename)(try_rename_room)
 
 
 if __name__ == "__main__":
-    print(bot.message_handlers)
-    try:
-        asyncio.run(bot.polling())
-    except Exception:
-        import traceback
-
-        traceback.print_exc()
+    asyncio.run(bot.polling())

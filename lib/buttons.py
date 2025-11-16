@@ -39,7 +39,6 @@ class GetMyData(AbstractButton):
     name = "Мои данные 📋"
 
     async def run(self, message: Message):
-        print("запрошены мои данные")
         msg = await get_user_info(message.from_user, status="info")
         await self.bot.send_message(message.chat.id, msg)
 
