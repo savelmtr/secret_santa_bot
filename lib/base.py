@@ -7,7 +7,7 @@ class AbstractButton(ABC, KeyboardButton):
     name: str
 
     def __new__(cls, *args, **kwargs):
-        if not hasattr(cls, 'instance'):
+        if not hasattr(cls, "instance"):
             cls.instance = super(AbstractButton, cls).__new__(cls)
         return cls.instance
 
@@ -48,12 +48,10 @@ class CustomBot(AsyncTeleBot):
 
         super().__init__(*args, **kwargs)
         self.button_sets = []
-        self.message_handler(content_types=['text'])(process_button_press)
-
+        self.message_handler(content_types=["text"])(process_button_press)
 
     def add_button_set(self, button_set: AbstractButtonSet):
         self.button_sets.append(button_set(self))
-
 
     async def get_available_buttonset(self, chat_id: int | str):
         available_bs = [
@@ -62,25 +60,34 @@ class CustomBot(AsyncTeleBot):
         return available_bs[0] if available_bs else None
 
     async def send_message(
-            self, chat_id: int | str, text: str, 
-            parse_mode:  None | str=None, 
-            entities:  None|list[MessageEntity]=None,
-            disable_web_page_preview:  None|bool=None, 
-            disable_notification:  None|bool=None, 
-            protect_content:  None|bool=None,
-            reply_to_message_id:  None|int=None, 
-            allow_sending_without_reply:  None|bool=None,
-            reply_markup:  None|REPLY_MARKUP_TYPES=None,
-            timeout:  None|int=None,
-            message_thread_id:  None|int=None) -> Message:
-        if message_thread_id:
-            raise NotImplemented('message_thread_id')
+        self,
+        chat_id: int | str,
+        text: str,
+        parse_mode: None | str = None,
+        entities: None | list[MessageEntity] = None,
+        disable_web_page_preview: None | bool = None,
+        disable_notification: None | bool = None,
+        protect_content: None | bool = None,
+        reply_to_message_id: None | int = None,
+        allow_sending_without_reply: None | bool = None,
+        reply_markup: None | REPLY_MARKUP_TYPES = None,
+        *args,
+        **kwargs
+    ) -> Message:
         reply_markup = reply_markup or await self.get_available_buttonset(chat_id)
         await super().send_message(
-            chat_id, text, parse_mode, entities, disable_web_page_preview,
-            disable_notification, protect_content, reply_to_message_id,
-            allow_sending_without_reply, reply_markup,
-            timeout
+            chat_id,
+            text,
+            parse_mode,
+            entities,
+            disable_web_page_preview,
+            disable_notification,
+            protect_content,
+            reply_to_message_id,
+            allow_sending_without_reply,
+            reply_markup,
+            *args,
+            **kwargs
         )
 
     def add_message_handler(self, handler_dict: dict):
