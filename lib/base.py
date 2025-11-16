@@ -38,6 +38,7 @@ class CustomBot(AsyncTeleBot):
 
     def __init__(self, *args, **kwargs):
         async def process_button_press(message: Message):
+            print("Нажата кнопка", message)
             btnset = await self.get_available_buttonset(message.chat.id)
             if not btnset:
                 return
