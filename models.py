@@ -8,7 +8,7 @@ Base = declarative_base()
 class Rooms(Base):
     __tablename__ = "rooms"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    creator_id = Column(Integer, ForeignKey("users.id"))
+    creator_id = Column(BigInteger, ForeignKey("users.id"))
     name = Column(String, nullable=False)
     passkey = Column(String)
     max_price = Column(String)
@@ -27,6 +27,6 @@ class Users(Base):
 
 class Pairs(Base):
     __tablename__ = "pairs"
-    giver_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    giver_id = Column(BigInteger, ForeignKey("users.id"), primary_key=True)
     room_id = Column(Integer, ForeignKey("rooms.id"), primary_key=True)
-    taker_id = Column(Integer, ForeignKey("users.id"))
+    taker_id = Column(BigInteger, ForeignKey("users.id"))
