@@ -30,7 +30,7 @@ class AbstractButtonSet(ABC, ReplyKeyboardMarkup):
             self.row(*[b(bot) for b in row])
 
     @abstractmethod
-    async def is_available(self, message: Message):
+    async def is_available(self, chat_id: int | None):
         pass
 
 
